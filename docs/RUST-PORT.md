@@ -174,12 +174,11 @@ grabchars/
 [dependencies]
 libc = "0.2"      # POSIX termios, signals, alarm
 regex = "1"       # Character filtering (-c)
-crossterm = "0.28" # Reserved for future select widget
 ```
 
-`crossterm` is in `Cargo.toml` for the planned select widget but is **not used
-for input**. Key reading uses a custom `read_key()` function built on
-`libc::read()` to avoid conflicts with our termios raw mode and SIGALRM setup.
+Key reading uses a custom `read_key()` function built on `libc::read()` to avoid
+conflicts with our termios raw mode and SIGALRM setup. Select/select-lr use raw
+ANSI sequences directly rather than a terminal library.
 
 ---
 
@@ -442,10 +441,8 @@ output where you don't want the cursor to advance.
 
 ## What's NOT Ported (Yet)
 
-- Inline select widget (`--select`) -- planned, will use crossterm
 - `isatty()` detection for pipe vs. terminal
 - Man page updates for new flags
-- Kill/yank ring (Ctrl-K stores but no Ctrl-Y to paste back)
 - Command history
 
 ---

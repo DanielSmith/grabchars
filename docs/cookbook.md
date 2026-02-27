@@ -58,7 +58,7 @@ grabchars -c aeiou -q "Vowel: "
 
 Type `b` — nothing happens. Type `a` — accepted and returned.
 
-### Accept a regex character class
+### Accept a character class
 
 ```bash
 grabchars -c "[A-Z]" -q "Uppercase letter: "

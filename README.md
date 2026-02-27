@@ -1,15 +1,14 @@
-# grabchars
+# grabchars 2.0
 
-**Precision keystroke capture for shell scripts.**
+**direct keystroke capture for shell scripts.**
 
 `grabchars` reads one or more keystrokes directly from the terminal — no Enter
-required. Originally written in C by Dan Smith (1988–1990, `comp.sources.misc`),
-this is a complete Rust rewrite preserving exact CLI compatibility while adding
-line editing, arrow key navigation, Emacs keybindings, and proper POSIX signal
+required. Originally written in C by me, Dan Smith (1988–1990, `comp.sources.misc`),
+this is a complete Rust rewrite, adding
+line editing, arrow key navigation, advanced filtering, Emacs keybindings, and proper POSIX signal
 handling.
 
-If your script needs "read exactly 3 vowels with a 5-second timeout defaulting
-to 'aei'", grabchars does it in one command.
+If your script needs just one character, or something like "read up to 4 digits for a PIN, default to `1234` if the user doesn't respond in 5 seconds", grabchars does it in one command.
 
 ---
 
@@ -17,7 +16,7 @@ to 'aei'", grabchars does it in one command.
 
 - **Single-keystroke capture** — grab exactly 1 key without Enter
 - **Multi-character input** (`-n N`) — grab exactly N keystrokes
-- **Character filtering** (`-c`) — only accept characters matching a regex pattern
+- **Character filtering** (`-c`) — only accept characters matching a character class (e.g., `aeiou`, `[A-Z]`, `0-9`)
 - **Default values** (`-d`) — return a default on Enter or timeout
 - **Timeout** (`-t`) — alarm-based timeout with SIGALRM
 - **Case mapping** (`-U` / `-L`) — force upper or lowercase
@@ -28,8 +27,11 @@ to 'aei'", grabchars does it in one command.
 - **Home/End keys** — jump to start/end of input
 - **Forward delete** — Delete key removes character ahead of cursor
 - **Emacs keybindings** — Ctrl-A/E/F/B/D/K/U/W
+- **Mask mode** (`-m`) — positional input validation with auto-inserted literals (phone numbers, dates, serial numbers)
 - **Trailing newline control** (`-Z`) — suppress the final newline to stderr
 - **Exit status = character count** — for shell `$?` testing
+- **Vertical select** (`select`) — choose from a list with Up/Down arrows and filter-as-you-type
+- **Horizontal select** (`select-lr`) — inline left/right selection with configurable highlight styles
 
 ---
 
@@ -52,9 +54,12 @@ cargo build --release
 ## Usage
 
 ```
-grabchars [-b] [-c chars] [-d default] [-e] [-f] [-n count]
-          [-p prompt] [-q prompt] [-r] [-s] [-t seconds]
-          [-E[0|1]] [-L] [-U] [-Z[0|1]]
+grabchars [-b] [-c chars] [-C exclude] [-d default] [-e] [-f] [-m mask]
+          [-n count] [-p prompt] [-q prompt] [-r] [-s] [-t seconds]
+          [-E[0|1]] [-H[r|b|a]] [-L] [-U] [-Z[0|1]]
+
+grabchars select  [opts] "item1,item2,..."   # vertical list
+grabchars select-lr [opts] "item1,item2,..." # horizontal list
 ```
 
 ### Flags Reference
@@ -62,10 +67,12 @@ grabchars [-b] [-c chars] [-d default] [-e] [-f] [-n count]
 | Flag | Description |
 |------|-------------|
 | `-b` | Output to both stdout and stderr |
-| `-c chars` | Character filter — only accept matching characters (regex) |
+| `-c chars` | Character filter — only accept matching characters (character class: `aeiou`, `[A-Z]`, `0-9`) |
+| `-C chars` | Character exclusion — reject matching characters, accept everything else |
 | `-d default` | Default string returned on Enter or timeout |
 | `-e` | Output to stderr instead of stdout |
 | `-f` | Flush type-ahead input buffer before reading |
+| `-m mask` | Mask mode — positional input with auto-inserted literals (see mask syntax) |
 | `-n count` | Number of keystrokes to read (default: 1) |
 | `-p prompt` | Print prompt to stdout |
 | `-q prompt` | Print prompt to stderr |
@@ -74,6 +81,7 @@ grabchars [-b] [-c chars] [-d default] [-e] [-f] [-n count]
 | `-t seconds` | Timeout in seconds |
 | `-E` / `-E1` | Enable line editing (auto-enabled when `-n > 1`) |
 | `-E0` | Disable line editing |
+| `-H r\|b\|a` | Select-lr highlight style: `r` reverse video (default), `b` bracket, `a` arrow |
 | `-L` | Map all input to lowercase |
 | `-U` | Map all input to uppercase |
 | `-Z0` | Suppress trailing newline to stderr |
@@ -101,38 +109,51 @@ type 20 chars, kill 10 with Ctrl-K, then type 10 more.
 
 ```bash
 # Single character — y/n prompt
-./grabchars -p "Continue? [y/n] " -c yn
-echo    # user pressed 'y' or 'n' immediately, no Enter needed
+grabchars -q "Continue? [y/n] " -c yn
 
 # 10 chars with full line editing (auto-enabled)
-./grabchars -n10 -r -p "Name: "
+grabchars -n10 -r -q "Name: "
 
 # 5 vowels only
-./grabchars -n5 -p "Vowels: " -c aeiou
+grabchars -n5 -q "Vowels: " -c aeiou
 
 # 3 chars with 5-second timeout and default
-./grabchars -n3 -p "Code: " -d abc -t5
+grabchars -n3 -q "Code: " -d abc -t5
 
 # Silent mode (exit status only)
-./grabchars -n3 -s; echo "Read $? characters"
+grabchars -n3 -s; echo "Read $? characters"
 
 # Uppercase mapping
-./grabchars -n3 -p "Initials: " -U
+grabchars -n3 -q "Initials: " -U
 
 # Disable editing for fixed-length input
-./grabchars -n5 -p "PIN: " -E0
+grabchars -n5 -q "PIN: " -E0
 
-# 20-char buffer — try arrows, Ctrl-K, Ctrl-U, Ctrl-W
-./grabchars -n20 -r -p ">> "
+# Phone number — literals auto-inserted
+grabchars -m "(nnn) nnn-nnnn" -q "Phone: "
+
+# Date with mask
+grabchars -m "nn/nn/nnnn" -q "Date (MM/DD/YYYY): "
+
+# Vertical select — arrow keys + filter-as-you-type
+grabchars select "red,green,blue,yellow" -q "Color: "
+
+# Horizontal select — left/right arrows
+grabchars select-lr "yes,no,cancel" -q "Action: "
+
+# Horizontal select with bracket highlight style
+grabchars select-lr "small,medium,large" -Hb -q "Size: "
 ```
 
 ### Exit Status
 
 | Situation | Exit status |
 |-----------|-------------|
-| Normal completion | Number of characters read (0–N) |
+| Normal completion | Number of characters read (1–N) |
 | Timeout with `-d` | Length of default string |
-| Timeout without `-d` | 254 (`-2` unsigned) |
+| Timeout without `-d` | 254 |
+| ESC pressed | 255 |
+| Error (bad flags, bad mask) | 255 |
 
 ---
 
@@ -170,29 +191,37 @@ reads at the cursor without taking over the terminal.
 
 ```
 grabchars/
-  docs/
-    RUST-PORT.md             # Detailed port notes and design decisions
   src/
-    main.rs                  # Argument parsing, key input, main loop, output
+    main.rs                  # Argument parsing, normal mode loop, signal handling
+    input.rs                 # Raw key input, escape sequence parsing
+    output.rs                # ANSI sequences, cursor control, output routing
+    mask.rs                  # Mask mode — positional input validation
+    select.rs                # Select mode (vertical) and select-lr (horizontal)
     term.rs                  # Terminal raw mode setup/restore (POSIX termios)
+  docs/
+    cookbook.md              # Runnable examples covering all features
+    maskInput.md             # Mask syntax reference
+    RUST-PORT.md             # Port notes, design decisions, architecture detail
+    quantifiers-plan.md      # Design doc for mask quantifiers
+    README-1990              # Original 1990 readme from comp.sources.misc
+  tests/
+    helpers.sh               # Shared test utilities
+    menu.sh                  # Interactive test menu (uses grabchars select-lr)
+    run_tests.sh             # Run all test groups
+    01_basic.sh … 11_select_lr.sh  # Test suites by feature
   Cargo.toml
-  grabchars.c                # Original C source (reference)
-  sys.c                      # Original C terminal/signal code (reference)
-  globals.c                  # Original C globals (reference)
-  grabchars.h                # Original C header (reference)
-  grabchars.1                # Man page
+  LICENSE                    # Apache 2.0
 ```
 
 ---
 
 ## History
 
-Written in 1988 by Dan Smith (`daniel@island.uu.net`) and posted to
+Written in 1988 by me, Dan Smith (`daniel@island.uu.net`) and posted to
 `comp.sources.misc`. The original C code (~665 lines across 4 files) no longer
 compiles on modern systems due to K&R syntax, BSD-only terminal APIs
 (`sgtty.h`), deprecated regex functions (`re_comp`/`re_exec`), and old signal
-conventions. This Rust port is a complete rewrite preserving the original CLI
-contract.
+conventions. This Rust port is a complete rewrite.
 
 ---
 

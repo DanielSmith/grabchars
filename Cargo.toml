@@ -9,4 +9,3 @@ license = "Apache-2.0"
 [dependencies]
 libc = "0.2"
 regex = "1"
-crossterm = "0.28"
