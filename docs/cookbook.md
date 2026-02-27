@@ -371,7 +371,7 @@ Enter to confirm. The selected option text goes to stdout.
 **Exit code** is the 0-based position of the chosen option in the
 original list (0 = first option, 1 = second, …). Most scripts capture
 the text via `$()` and ignore the exit code; but the exit code lets you
-branch by position without string comparison (see section 19).
+branch by position without string comparison (see section 20).
 
 ### Tab completion
 
@@ -700,7 +700,79 @@ discarded. Without `-f`, they'd be read immediately.
 
 ---
 
-## 19. Exit Codes
+## 19. Raw Mode (-R)
+
+Raw mode bypasses the escape sequence parser entirely. Every byte read from
+the terminal counts toward `-n`, including multi-byte sequences like arrow
+keys (0x1B 0x5B 0x41 = three bytes for Up).
+
+Use cases: key-binding capture, terminal apps that need to know the exact
+byte sequence a key sends, debugging what your terminal actually transmits.
+
+> **Note:** `-c/-C/-U/-L/-E` are silently ignored in raw mode — character-level
+> filtering doesn't make sense when you're collecting raw bytes.
+
+### Capture a single key — including arrow keys
+
+```bash
+grabchars -R -n 3 -q "Press an arrow key: "
+xxd
+```
+
+Press Up arrow. You get three bytes: `1b 5b 41`. Exit code is 3.
+If you press a plain letter like `a`, you get one byte and the loop
+waits for two more (to reach `-n 3`).
+
+### Capture exactly one byte
+
+```bash
+grabchars -R -n 1 -q "Any key: "
+```
+
+Press any key. Exit code is 1 regardless of whether it was a letter or
+the start of an escape sequence.
+
+### Capture up to N bytes, Enter to finish early
+
+```bash
+grabchars -R -n 10 -r -q "Type something (Enter to finish): "
+echo "Exit code: $?"
+```
+
+Type `hi` then Enter — you get two bytes (`h`, `i`). Exit code 2.
+The Enter byte (0x0D or 0x0A) is NOT included in the output.
+
+### Silent raw mode — just count bytes
+
+```bash
+grabchars -R -n 3 -s -q "Press an arrow key: "
+echo "Bytes read: $?"
+```
+
+Press an arrow key — no output, exit code 3.
+
+### Timeout in raw mode
+
+```bash
+grabchars -R -n 10 -t 3 -q "Press keys (3s timeout): "
+echo "Exit: $?"
+```
+
+Wait 3 seconds without typing — exit code 254. Type something first —
+partial bytes are output and the exit code is the byte count.
+
+### Capture as hex (pipe to xxd)
+
+```bash
+grabchars -R -n 6 -q "Press two arrow keys: " | xxd
+```
+
+Press Left, then Right. You see `1b 5b 44 1b 5b 43` — two 3-byte CSI
+sequences. Exit code 6.
+
+---
+
+## 20. Exit Codes
 
 **Normal / mask mode:**
 
@@ -753,7 +825,7 @@ esac
 
 ---
 
-## 20. Real-World Script Patterns
+## 21. Real-World Script Patterns
 
 ### Confirm before destructive action
 

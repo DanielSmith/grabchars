@@ -56,6 +56,7 @@ pub struct Flags {
     pub exclude: bool,
     pub dflt: bool,
     pub flush: bool,
+    pub raw: bool,
     pub ret_key: bool,
     pub silent: bool,
     pub erase: Option<bool>, // None = unset (auto), Some(true) = on, Some(false) = off
@@ -73,6 +74,7 @@ impl Flags {
             exclude: false,
             dflt: false,
             flush: false,
+            raw: false,
             ret_key: false,
             silent: false,
             erase: None,
@@ -103,6 +105,7 @@ fn print_usage() {
         "       -p<prompt>           prompt to help user",
         "       -q<prompt>           prompt to help user (through stderr)",
         "       -r                   RETURN key exits (use with -n)",
+        "       -R                   raw mode: capture bytes as-is (no escape parsing)",
         "       -s                   silent, just return status",
         "       -t<seconds>          timeout after <seconds>",
         "       -E/-E1/-E0            enable/disable line editing (default: on when -n > 1)",
@@ -401,6 +404,7 @@ fn main() {
                     break;
                 }
                 'r' => flags.ret_key = true,
+                'R' => flags.raw = true,
                 's' => flags.silent = true,
                 't' => {
                     let val = parser.get_optarg(&rest).unwrap_or_else(|| {
@@ -545,6 +549,63 @@ fn main() {
         output::trailing_newline_if(&flags);
         term::restore_term(&orig_termios);
         process::exit(exit_code);
+    }
+
+    // Raw mode: bypass escape sequence parser, collect bytes as-is
+    if flags.raw {
+        let stdin_fd = io::stdin().as_raw_fd();
+        let mut num_read: usize = 0;
+        let mut buffer: Vec<u8> = Vec::new();
+
+        'raw: loop {
+            if num_read >= how_many {
+                break;
+            }
+            if TIMED_OUT.load(Ordering::Relaxed) {
+                if flags.dflt && num_read == 0 {
+                    if let Some(ref ds) = default_string {
+                        output::handle_default(ds, &flags, output_to_stderr);
+                        output::trailing_newline_if(&flags);
+                        term::restore_term(&orig_termios);
+                        process::exit(EXIT_STAT.load(Ordering::Relaxed));
+                    }
+                }
+                if !flags.silent && !buffer.is_empty() {
+                    output::output_bytes(&buffer, output_to_stderr, flags.both);
+                }
+                output::trailing_newline_if(&flags);
+                EXIT_STAT.store(-2, Ordering::Relaxed);
+                term::restore_term(&orig_termios);
+                process::exit(-2);
+            }
+            let b = match input::read_byte(stdin_fd) {
+                Ok(b) => b,
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            };
+            // -r: Enter (0x0A or 0x0D) exits the loop; byte is NOT added to buffer
+            if (b == 0x0A || b == 0x0D) && flags.ret_key {
+                if flags.dflt && num_read == 0 {
+                    if let Some(ref ds) = default_string {
+                        output::handle_default(ds, &flags, output_to_stderr);
+                        output::trailing_newline_if(&flags);
+                        term::restore_term(&orig_termios);
+                        process::exit(EXIT_STAT.load(Ordering::Relaxed));
+                    }
+                }
+                break 'raw;
+            }
+            buffer.push(b);
+            num_read += 1;
+        }
+
+        if !flags.silent && !buffer.is_empty() {
+            output::output_bytes(&buffer, output_to_stderr, flags.both);
+        }
+        output::trailing_newline_if(&flags);
+        EXIT_STAT.store(num_read as i32, Ordering::Relaxed);
+        term::restore_term(&orig_termios);
+        process::exit(num_read as i32);
     }
 
     // Resolve erase mode: if unset, default to on when how_many > 1

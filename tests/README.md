@@ -88,6 +88,7 @@ bash tests/09_mask.sh
 | `09_mask.sh`      | `-m` mask mode: classes, literals, quantifiers, backspace     |
 | `10_select.sh`    | Vertical `select` mode: filter, default, timeout, `--file`    |
 | `11_select_lr.sh` | Horizontal `select-lr` mode: arrows, wrap, highlight styles   |
+| `12_raw.sh`       | `-R` raw mode: byte capture, escape sequences, `-r`/`-d`/`-s`/`-e`/`-b`, ignored flags |
 
 ## Helper infrastructure
 

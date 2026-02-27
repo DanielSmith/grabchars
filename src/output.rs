@@ -105,3 +105,21 @@ pub fn output_str(s: &str, to_stderr: bool, both: bool) {
         }
     }
 }
+
+pub fn output_bytes(buf: &[u8], to_stderr: bool, both: bool) {
+    if to_stderr {
+        let _ = io::stderr().write_all(buf);
+        let _ = io::stderr().flush();
+        if both {
+            let _ = io::stdout().write_all(buf);
+            let _ = io::stdout().flush();
+        }
+    } else {
+        let _ = io::stdout().write_all(buf);
+        let _ = io::stdout().flush();
+        if both {
+            let _ = io::stderr().write_all(buf);
+            let _ = io::stderr().flush();
+        }
+    }
+}

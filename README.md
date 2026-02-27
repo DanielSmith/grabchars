@@ -27,6 +27,7 @@ If your script needs just one character, or something like "read up to 4 digits 
 - **Home/End keys** — jump to start/end of input
 - **Forward delete** — Delete key removes character ahead of cursor
 - **Emacs keybindings** — Ctrl-A/E/F/B/D/K/U/W
+- **Raw mode** (`-R`) — capture bytes as-is, bypassing escape-sequence parsing; arrow key = 3 bytes, function keys = 4–5 bytes; `-n` counts bytes
 - **Mask mode** (`-m`) — positional input validation with auto-inserted literals (phone numbers, dates, serial numbers)
 - **Trailing newline control** (`-Z`) — suppress the final newline to stderr
 - **Exit status = character count** — for shell `$?` testing
@@ -55,7 +56,7 @@ cargo build --release
 
 ```
 grabchars [-b] [-c chars] [-C exclude] [-d default] [-e] [-f] [-m mask]
-          [-n count] [-p prompt] [-q prompt] [-r] [-s] [-t seconds]
+          [-n count] [-p prompt] [-q prompt] [-r] [-R] [-s] [-t seconds]
           [-E[0|1]] [-H[r|b|a]] [-L] [-U] [-Z[0|1]]
 
 grabchars select  [opts] "item1,item2,..."   # vertical list
@@ -77,6 +78,7 @@ grabchars select-lr [opts] "item1,item2,..." # horizontal list
 | `-p prompt` | Print prompt to stdout |
 | `-q prompt` | Print prompt to stderr |
 | `-r` | Enter key exits early (with `-n`) |
+| `-R` | Raw mode — capture bytes as-is, no escape-sequence parsing (`-c`/`-C`/`-U`/`-L`/`-E` are ignored) |
 | `-s` | Silent mode — no echo, exit status only |
 | `-t seconds` | Timeout in seconds |
 | `-E` / `-E1` | Enable line editing (auto-enabled when `-n > 1`) |
@@ -143,6 +145,15 @@ grabchars select-lr "yes,no,cancel" -q "Action: "
 
 # Horizontal select with bracket highlight style
 grabchars select-lr "small,medium,large" -Hb -q "Size: "
+
+# Raw mode: capture arrow key as 3 bytes (ESC [ A), exit code 3
+grabchars -R -n3 -q "Press an arrow key: "
+
+# Raw mode: up to 20 bytes, Enter to stop early
+grabchars -R -n20 -r -q "Type (Enter to finish): "
+
+# Raw mode: discover what bytes any key sends (pipe to xxd)
+grabchars -R -n6 -q "Press a key: " | xxd
 ```
 
 ### Exit Status
@@ -150,9 +161,10 @@ grabchars select-lr "small,medium,large" -Hb -q "Size: "
 | Situation | Exit status |
 |-----------|-------------|
 | Normal completion | Number of characters read (1–N) |
+| Raw mode (`-R`) completion | Number of **bytes** read (arrow key = 3) |
 | Timeout with `-d` | Length of default string |
 | Timeout without `-d` | 254 |
-| ESC pressed | 255 |
+| ESC pressed | 255 (normal mode only; in `-R`, ESC is just byte 0x1B) |
 | Error (bad flags, bad mask) | 255 |
 
 ---
@@ -201,6 +213,7 @@ grabchars/
   docs/
     cookbook.md              # Runnable examples covering all features
     maskInput.md             # Mask syntax reference
+    RAW-MODE.md              # Raw mode (-R) reference: byte sequences, flag interactions, impl notes
     RUST-PORT.md             # Port notes, design decisions, architecture detail
     quantifiers-plan.md      # Design doc for mask quantifiers
     README-1990              # Original 1990 readme from comp.sources.misc
@@ -208,7 +221,7 @@ grabchars/
     helpers.sh               # Shared test utilities
     menu.sh                  # Interactive test menu (uses grabchars select-lr)
     run_tests.sh             # Run all test groups
-    01_basic.sh … 11_select_lr.sh  # Test suites by feature
+    01_basic.sh … 12_raw.sh        # Test suites by feature
   Cargo.toml
   LICENSE                    # Apache 2.0
 ```
@@ -217,7 +230,7 @@ grabchars/
 
 ## History
 
-Written in 1988 by me, Dan Smith (`daniel@island.uu.net`) and posted to
+Written in 1988 by me, Dan Smith (at the time: `daniel@island.uu.net`) and posted to
 `comp.sources.misc`. The original C code (~665 lines across 4 files) no longer
 compiles on modern systems due to K&R syntax, BSD-only terminal APIs
 (`sgtty.h`), deprecated regex functions (`re_comp`/`re_exec`), and old signal

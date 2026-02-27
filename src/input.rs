@@ -55,22 +55,16 @@ pub fn read_key(fd: i32) -> Result<KeyInput, io::Error> {
     }
 }
 
-fn read_byte(fd: i32) -> Result<u8, io::Error> {
+pub fn read_byte(fd: i32) -> Result<u8, io::Error> {
     let mut buf = [0u8; 1];
-    loop {
-        let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
-        if n == 1 {
-            return Ok(buf[0]);
-        }
-        if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
-        }
-        let err = io::Error::last_os_error();
-        if err.kind() == io::ErrorKind::Interrupted {
-            return Err(err);
-        }
-        return Err(err);
+    let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    if n == 1 {
+        return Ok(buf[0]);
     }
+    if n == 0 {
+        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
+    }
+    Err(io::Error::last_os_error())
 }
 
 /// Check if a byte is available on the given fd within `timeout_ms` milliseconds.

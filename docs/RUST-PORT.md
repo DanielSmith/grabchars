@@ -20,7 +20,8 @@ handler conventions.
 
 The Rust port is a complete rewrite that preserves exact CLI compatibility with
 the original while adding line editing, arrow key navigation, Emacs keybindings,
-and a proper POSIX signal architecture.
+mask mode, select/select-lr menus, raw byte capture, and a proper POSIX signal
+architecture.
 
 ---
 
@@ -49,6 +50,13 @@ new capabilities:
 - **Home/End keys** -- jump to start/end of input
 - **Forward delete** -- Delete key removes character ahead of cursor
 - **Emacs keybindings** -- Ctrl-A/E/F/B/D/K/U/W (see below)
+- **Character exclusion** (`-C`) -- reject specific characters, accept everything else
+- **Raw mode** (`-R`) -- bypass escape-sequence parser; every byte captured as-is,
+  `-n` counts bytes; arrow key = 3 bytes; `-c`/`-C`/`-U`/`-L`/`-E` silently ignored
+- **Mask mode** (`-m`) -- positional input validation; character classes (U/l/c/n/x/p/./`[...]`),
+  literal auto-insertion, quantifiers (`*`/`+`/`?`)
+- **Vertical select** (`select`) -- filter-as-you-type list selection
+- **Horizontal select** (`select-lr`) -- left/right list navigation with configurable highlight
 - **Trailing newline control** (`-Z`) -- suppress the final newline to stderr
 - **Escape sequence consumption** -- arrow keys in non-edit mode are silently
   ignored instead of dumping `^[[C` garbage
@@ -89,8 +97,9 @@ shell scripts. It's a Swiss Army knife with `input`, `choose`, `confirm`,
 | Case mapping | Yes (`-U`/`-L`) | No |
 | Line editing | Yes (arrows, Emacs keys) | Yes (basic line editing in `gum input`) |
 | Output to stdout, prompt on stderr | Yes | Yes |
-| Choose from list | Not yet | Yes (`gum choose`, `gum filter`) |
-| Fuzzy filtering | No | Yes (`gum filter`) |
+| Choose from list | Yes (`select`, `select-lr`) | Yes (`gum choose`, `gum filter`) |
+| Fuzzy filtering | No (`select` uses prefix filter) | Yes (`gum filter`) |
+| Raw byte capture | Yes (`-R`) | No |
 | Styled output / colors | No | Yes (`gum style`, Lip Gloss) |
 | Spinner / progress | No | Yes (`gum spin`) |
 | Markdown rendering | No | Yes (`gum format`) |
@@ -152,18 +161,25 @@ grabchars could potentially feed choices *to* fzf, but they don't overlap.
 ```
 grabchars/
   src/
-    main.rs                # Argument parsing, key input, main loop, output
-    term.rs                # Terminal raw mode setup/restore
-  Cargo.toml
-  grabchars.c                # Original C main (360 lines)
-  sys.c                      # Original C terminal/signal/erase (255 lines)
-  globals.c                  # Original C globals
-  grabchars.h                # Original C header (FLAG struct, macros)
-  grabchars.1                # Man page
-  README                     # Original readme
-  TODO                       # Dan Smith's TODO list
+    main.rs      # Argument parsing, Flags, signal/alarm setup, normal+raw mode loops
+    input.rs     # read_key() + read_byte(): raw byte reads, escape sequence parsing
+    output.rs    # output_char/str/bytes(), redraw_input(), cursor helpers
+    mask.rs      # Mask mode (-m): MaskElement, MaskClass, quantifiers, run_mask_mode()
+    select.rs    # Vertical select and horizontal select-lr modes
+    term.rs      # Terminal raw mode setup/restore (POSIX termios)
   docs/
-    RUST-PORT.md             # This file
+    cookbook.md          # Runnable examples covering every feature
+    maskInput.md         # Mask syntax reference
+    RAW-MODE.md          # Raw mode (-R) reference
+    RUST-PORT.md         # This file
+    quantifiers-plan.md  # Design doc for mask quantifiers
+  tests/
+    helpers.sh           # Shared test utilities and assertions
+    menu.sh              # Interactive test selector (uses grabchars select-lr)
+    run_tests.sh         # Master test runner
+    01_basic.sh … 12_raw.sh   # Test suites by feature
+  Cargo.toml
+  LICENSE                # Apache 2.0
 ```
 
 ---
@@ -176,9 +192,9 @@ libc = "0.2"      # POSIX termios, signals, alarm
 regex = "1"       # Character filtering (-c)
 ```
 
-Key reading uses a custom `read_key()` function built on `libc::read()` to avoid
-conflicts with our termios raw mode and SIGALRM setup. Select/select-lr use raw
-ANSI sequences directly rather than a terminal library.
+Key reading uses a custom `read_key()` / `read_byte()` built on `libc::read()`
+to avoid conflicts with our termios raw mode and SIGALRM setup. Select/select-lr
+use raw ANSI sequences directly rather than a terminal library.
 
 ---
 
@@ -188,13 +204,17 @@ ANSI sequences directly rather than a terminal library.
 
 | C file | Rust | Notes |
 |--------|------|-------|
-| `grabchars.c` main + arg parsing + char loop | `src/main.rs` | Single file, self-contained |
+| `grabchars.c` main + arg parsing + char loop | `src/main.rs` | Significantly expanded |
 | `sys.c` `init_term()`, `lets_go()` | `src/term.rs` | `init_term()` / `restore_term()` / `restore_saved()` |
 | `sys.c` `init_signal()`, `overtime()` | `src/main.rs` | `setup_signals()`, `setup_alarm()`, signal handlers |
-| `sys.c` `handle_default()` | `src/main.rs` | `handle_default()` |
+| `sys.c` `handle_default()` | `src/output.rs` | Moved to output module |
 | `sys.c` `handle_erase()` + `DV_ERASE` | `src/main.rs` | **Replaced** with `KeyInput` enum + full line editing |
 | `globals.c` (flags, outfile, exit_stat) | `src/main.rs` | `Flags` struct, local variables, atomics for signal safety |
 | `grabchars.h` (FLAG typedef, macros) | `src/main.rs` | `Flags` struct |
+| *(new)* | `src/input.rs` | Key input and escape sequence parsing |
+| *(new)* | `src/output.rs` | All output functions |
+| *(new)* | `src/mask.rs` | Mask mode |
+| *(new)* | `src/select.rs` | Select / select-lr modes |
 
 ### Global state
 
@@ -202,7 +222,7 @@ ANSI sequences directly rather than a terminal library.
 |---|------|-----|
 | `FLAG *flags` (heap-allocated) | `Flags` struct on stack | No need for heap allocation |
 | `int exit_stat` | `static AtomicI32 EXIT_STAT` | Must be accessible from signal handlers |
-| `FILE *outfile, *otherout` | `output_to_stderr: bool` | Simpler; `output_char`/`output_str` handle routing |
+| `FILE *outfile, *otherout` | `output_to_stderr: bool` | Simpler; `output_char`/`output_str`/`output_bytes` handle routing |
 | `struct sgttyb orig` / `struct termio orig` | `libc::termios` returned from `init_term()` | POSIX termios replaces both BSD and SysV APIs |
 | saved termios for signal handler | `static Mutex<Option<libc::termios>> SAVED_TERMIOS` | `restore_saved()` reads this in signal context |
 
@@ -231,22 +251,40 @@ a single POSIX `termios` implementation.
 
 ## Key Input Architecture
 
+### The `read_byte()` function (`input.rs`)
+
+The lowest-level primitive. One `libc::read()` call for a single byte:
+
+```rust
+pub fn read_byte(fd: i32) -> Result<u8, io::Error>
+```
+
+Returns:
+- `Ok(byte)` — success
+- `Err(UnexpectedEof)` — EOF (n == 0)
+- `Err(last_os_error())` — error, including `ErrorKind::Interrupted` for EINTR
+
+`read_byte` is `pub` so that raw mode (`-R`) can call it directly from `main.rs`,
+bypassing all escape-sequence interpretation.
+
 ### The `read_key()` / `parse_escape_seq()` pipeline
 
-Instead of reading raw bytes and checking them inline, the port uses a `KeyInput`
-enum and a `read_key()` function that returns structured key events:
+Used by normal mode, mask mode, and select modes. Returns structured key events:
 
 ```rust
 enum KeyInput {
     Char(u8),
     Backspace, Delete,
-    Left, Right, Home, End,
+    Left, Right, Up, Down,
+    Home, End,
+    Tab,
+    Escape,
     KillToEnd, KillToStart, KillWordBack,
     Enter, Unknown,
 }
 ```
 
-`read_key()` reads one byte via `libc::read()`, then:
+`read_key()` calls `read_byte()`, then:
 - Maps control characters to their Emacs bindings (0x01=Home, 0x02=Left, etc.)
 - Maps 0x7F/0x08 to Backspace, 0x0A/0x0D to Enter
 - On 0x1B (Escape), calls `parse_escape_seq()` to consume the CSI sequence
@@ -257,16 +295,20 @@ enum KeyInput {
 - `\x1b[1~/4~` -- alternate Home/End
 - Everything else -- `Unknown` (consumed and discarded)
 
-On EINTR during escape sequence reads, returns `Unknown` -- the main loop
-re-checks `TIMED_OUT`. Partial escape state is safely lost.
+ESC disambiguation: `byte_available(fd, 50)` (poll with 50ms timeout) decides
+whether ESC is bare or the start of a sequence. Bare ESC returns `KeyInput::Escape`.
+
+On EINTR, `read_byte` returns `Err(Interrupted)`. Callers handle it by
+`continue`-ing their loop to re-check `TIMED_OUT`. Partial escape state is
+safely lost.
 
 ### ANSI escape output
 
-Output escape sequences are defined as constants, not hardcoded inline:
+Output escape sequences are defined as constants:
 
 ```rust
 const CSI: &str = "\x1b[";
-const CURSOR_LEFT: &[u8] = b"\x1b[D";
+const CURSOR_LEFT:  &[u8] = b"\x1b[D";
 const CURSOR_RIGHT: &[u8] = b"\x1b[C";
 const CLEAR_TO_EOL: &[u8] = b"\x1b[K";
 ```
@@ -299,8 +341,8 @@ that `read()` returns `EINTR` on all POSIX systems. On macOS, `signal()` sets
 `SA_RESTART` by default, which would cause `read()` to silently resume after
 the alarm -- never returning to check the timeout flag.
 
-The alarm handler sets `TIMED_OUT` (an `AtomicBool`). The main loop checks
-this at the top of each iteration and on `EINTR` from `read()`.
+The alarm handler sets `TIMED_OUT` (an `AtomicBool`). All reading loops check
+this at the top of each iteration and on `EINTR` from `read_byte()`.
 
 ---
 
@@ -325,16 +367,19 @@ behavior).
 
 ```rust
 struct Flags {
-    both: bool,            // -b: output to stdout AND stderr
-    check: bool,           // -c: character filtering active
-    dflt: bool,            // -d: default string set
-    flush: bool,           // -f: flush input buffer on init
-    ret_key: bool,         // -r: Enter key exits (with -n)
-    silent: bool,          // -s: no output, just exit status
-    erase: Option<bool>,   // -E: line editing (see below)
-    lower: bool,           // -L: map input to lowercase
-    upper: bool,           // -U: map input to uppercase
+    both: bool,             // -b: output to stdout AND stderr
+    check: bool,            // -c: character filtering active
+    exclude: bool,          // -C: character exclusion active
+    dflt: bool,             // -d: default string set
+    flush: bool,            // -f: flush input buffer on init
+    raw: bool,              // -R: raw byte capture (bypass escape parser)
+    ret_key: bool,          // -r: Enter key exits (with -n)
+    silent: bool,           // -s: no output, just exit status
+    erase: Option<bool>,    // -E: line editing (None=auto, Some(true)=on, Some(false)=off)
+    lower: bool,            // -L: map input to lowercase
+    upper: bool,            // -U: map input to uppercase
     trailing_newline: bool, // -Z: trailing newline to stderr (default: on)
+    highlight_style: HighlightStyle,  // -H: select-lr highlight (Reverse/Bracket/Arrow)
 }
 ```
 
@@ -343,12 +388,15 @@ struct Flags {
 | Flag | Original C | Rust port |
 |------|-----------|-----------|
 | `-E` | `bool`, BSD erase/kill chars | `Option<bool>` tri-state with auto-default |
+| `-C` | not present | New: character exclusion (complement of `-c`) |
+| `-R` | not present | New: raw byte capture mode |
+| `-H` | not present | New: select-lr highlight style |
 | `-Z` | not present | New: controls trailing newline to stderr |
 | `-E0`/`-E1` | not present | New: explicit enable/disable syntax |
 
 ---
 
-## Character Filtering (`-c`)
+## Character Filtering (`-c`) and Exclusion (`-C`)
 
 The original used BSD `re_comp()`/`re_exec()` for character matching. The Rust
 port uses the `regex` crate:
@@ -358,11 +406,32 @@ port uses the `regex` crate:
 - Each character is tested individually against the pattern
 - Non-matching characters are silently skipped (not counted, not echoed)
 
+`-C` works identically but inverted: matching characters are rejected.
+
+Both flags are silently ignored in raw mode (`-R`).
+
 ---
 
 ## The Main Character Loop
 
-The heart of grabchars. Reads one logical key at a time via `read_key()`.
+`main()` branches into one of four modes in this order:
+
+```
+1. select / select-lr  →  src/select.rs   (early exit)
+2. mask mode (-m)      →  src/mask.rs     (early exit)
+3. raw mode (-R)       →  inline in main  (early exit)
+4. normal mode         →  inline in main  (falls through)
+```
+
+### Raw mode loop (`-R`)
+
+Calls `input::read_byte(stdin_fd)` in a tight loop, accumulating bytes directly:
+
+- Each byte (any byte, including 0x1B) is pushed to the buffer unconditionally
+- EINTR → `continue` (allows SIGALRM to interrupt, TIMED_OUT re-checked next iter)
+- If `-r` is active and byte is 0x0A or 0x0D → exit loop (Enter byte not stored)
+- `-c`/`-C`/`-U`/`-L`/`-E` are never consulted
+- On loop exit: `output_bytes(&buffer, ...)` then `process::exit(num_read)`
 
 ### Edit mode (when `erase_active`)
 
@@ -370,7 +439,7 @@ The loop is a `match` on `KeyInput`:
 
 | Key | Action |
 |-----|--------|
-| `Char(b)` | Apply `-c` filter and case mapping. Insert at `cursor_pos`, increment `cursor_pos` and `num_read`, redraw. |
+| `Char(b)` | Apply `-c`/`-C` filters and case mapping. Insert at `cursor_pos`, increment `cursor_pos` and `num_read`, redraw. |
 | `Backspace` | If `cursor_pos > 0`: remove char before cursor, decrement both counters, redraw. |
 | `Delete` / Ctrl-D | If `cursor_pos < len`: remove char at cursor, decrement `num_read`, redraw. |
 | `Left` / Ctrl-B | If `cursor_pos > 0`: decrement, emit cursor-left. |
@@ -381,13 +450,14 @@ The loop is a `match` on `KeyInput`:
 | `Ctrl-U` | Drain buffer before cursor, decrement `num_read` by chars removed, redraw. |
 | `Ctrl-W` | Kill word backward (skip whitespace, then non-whitespace), adjust `num_read`, redraw. |
 | `Enter` | Check default/ret_key logic, or treat as filtered char. |
-| `Unknown` | Ignore silently. |
+| `Unknown` / `Up` / `Down` / `Tab` / `Escape` | Ignore silently. |
 
 ### Non-edit mode (when `!erase_active`)
 
-Only `Char` and `Enter` matter. Arrow key escape sequences are consumed by
-`read_key()` and returned as `Unknown` -- silently ignored instead of echoed
-as garbage. This is a behavioral improvement even for `-n1` mode.
+Only `Char`, `Backspace` (as raw byte 0x7F), and `Enter` matter. Arrow key
+escape sequences are consumed by `read_key()` and returned as `Unknown` --
+silently ignored instead of echoed as garbage. This is a behavioral improvement
+even for `-n1` mode.
 
 ### Buffer full handling
 
@@ -403,24 +473,29 @@ Characters are sent to stdout by default, or stderr with `-e`, or both with `-b`
 
 | Function | Purpose |
 |----------|---------|
-| `output_char(ch, to_stderr, both)` | Single character output |
-| `output_str(s, to_stderr, both)` | String output (default string, erase buffer) |
+| `output_char(ch, to_stderr, both)` | Single character (used in non-edit mode per-char echo) |
+| `output_str(s, to_stderr, both)` | String output (default string, final edit buffer) |
+| `output_bytes(buf, to_stderr, both)` | Raw byte slice output (raw mode; uses `write_all`, no UTF-8 assumption) |
 
-In erase mode, the visual echo goes to stderr always (so the user sees what
+In edit mode, the visual echo goes to stderr always (so the user sees what
 they're typing), while the final clean buffer goes to the primary output at
 the end.
+
+In raw mode, there is no per-byte echo. The entire buffer is written at exit
+via `output_bytes`.
 
 ---
 
 ## Exit Status
 
-The exit status is set to the number of characters read, matching the original:
+The exit status is set to the number of characters (or bytes, in raw mode) read:
 
 | Situation | Exit status |
 |-----------|-------------|
 | Normal completion | `num_read` (0 to N) |
+| Raw mode completion | `num_read` in bytes (arrow key = 3) |
 | Timeout with default | `default_string.len()` |
-| Timeout without default | `-2` |
+| Timeout without default | `-2` (i.e., 254 in u8 shell exit) |
 | Signal (INT/QUIT/TSTP) | Current `EXIT_STAT` value |
 | Before any input | `-1` (initial value) |
 
@@ -436,14 +511,6 @@ to stderr (for terminal cleanliness). This is ON by default.
 
 This is useful when embedding grabchars output in a larger line of terminal
 output where you don't want the cursor to advance.
-
----
-
-## What's NOT Ported (Yet)
-
-- `isatty()` detection for pipe vs. terminal
-- Man page updates for new flags
-- Command history
 
 ---
 
@@ -483,6 +550,24 @@ cargo build --release
 
 # Uppercase mapping
 ./target/release/grabchars -n3 -p ">> " -U
+
+# Phone number mask — literals auto-inserted
+./target/release/grabchars -m "(nnn) nnn-nnnn" -q "Phone: "
+
+# Date mask
+./target/release/grabchars -m "nn/nn/nnnn" -q "Date (MM/DD/YYYY): "
+
+# Vertical select from a list
+./target/release/grabchars select "red,green,blue,yellow" -q "Color: "
+
+# Horizontal select
+./target/release/grabchars select-lr "yes,no,cancel" -q "Action: "
+
+# Raw mode: capture arrow key as 3 bytes, exit code 3
+./target/release/grabchars -R -n3 -q "Press arrow key: "
+
+# Raw mode: discover what bytes a key sends
+./target/release/grabchars -R -n6 -q "Press a key: " | xxd
 
 # 20-char buffer, go wild with editing
 ./target/release/grabchars -n20 -r -p ">> "
