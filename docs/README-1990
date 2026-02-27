@@ -86,3 +86,14 @@ run into any problems with this.  Lastly, do not use any part of
 grabchars in any product for profit (electronic, paper, or any other
 media) without obtaining my written permission.
 
+----
+
+An additional history note (from 2026):
+
+Before grabchars, I was working on a an extra credit project in college (~1985, on BSD Unix)  It was an animation editor for the ADM5 terminal with an RG-512 graphics card.
+I wanted to get direct keyboard input, but I was writing in Pascal.  A UC Berkeley friend clued me into how I could link with a C library to get the right terminal mode.
+That later led to my thought: "cant I make shell scripts more interactive?"
+
+
+
+

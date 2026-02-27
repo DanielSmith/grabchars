@@ -118,25 +118,22 @@ Type `A` — you see `a`. Output is `a`.
 
 ### Combine with -c
 
-```bash
-grabchars -U -c yn -q "Yes/No? "
-```
-
-Type `y` — mapped to `Y`, then checked against `yn`. Accepted
-because `-c yn` includes both cases? No — `-U` maps first, then
-`Y` is checked against `[yn]`. `Y` doesn't match `y` or `n`.
-
-To make this work as expected:
+`-U` and `-L` map the character first, then `-c` filters the result.
+So the filter must match the post-mapping value.
 
 ```bash
-grabchars -U -c yYnN -q "Yes/No? "
+grabchars -U -c YN -q "Yes/No? "
 ```
 
-Or use a case-insensitive class:
+Type `y` or `Y` — both map to `Y`, which passes `-c YN`. Output is
+always `Y` or `N`.
 
 ```bash
-grabchars -U -c "[ynYN]" -q "Yes/No? "
+grabchars -L -c yn -q "Yes/No? "
 ```
+
+Type `y` or `Y` — both map to `y`, which passes `-c yn`. Output is
+always `y` or `n`.
 
 ---
 
@@ -246,21 +243,53 @@ with exit code 254.
 
 ## 9. Silent Mode (-s)
 
-Don't echo keystrokes. Output still goes to stdout.
+Suppress all output — no echo during typing, nothing sent to stdout or
+stderr. Only the exit code is returned (number of characters read).
 
 ```bash
 grabchars -n 8 -s -q "Password: "
+echo "Exit code: $?"
 ```
 
-Type 8 characters — nothing is echoed. The password goes to stdout.
+Type 8 characters — nothing is echoed, nothing is printed. The exit
+code tells you how many characters were typed.
 
-### Capture silently
+### Press any key to continue
 
 ```bash
-PASSWORD=$(grabchars -n 20 -r -s -q "Password: ")
-echo ""  # newline after invisible input
-echo "Got ${#PASSWORD} chars"
+grabchars -s -q "Press any key to continue..."
 ```
+
+### Gate on character count
+
+```bash
+grabchars -n 4 -s -q "Type your 4-digit PIN: "
+if [ $? -eq 4 ]; then
+    echo "OK"
+else
+    echo "Wrong number of characters"
+fi
+```
+
+### Note: capturing without echo
+
+`-s` suppresses the final output, so `$()` capture returns nothing.
+To capture what was typed while suppressing on-screen echo, redirect
+stderr (where the typing display goes) to `/dev/null` instead:
+
+```bash
+CHOICE=$(grabchars -n 1 -q "Choice: " 2>/dev/null)
+echo "Got: $CHOICE"
+```
+
+Note: if you run `grabchars ... 2>/dev/null` directly at an interactive
+zsh prompt (not in `$()`), you'll see a `%` after the output. That's
+zsh's partial-line indicator — it appears because the trailing newline
+normally goes to stderr, which you've suppressed. It's not grabchars
+output. Use `$()` capture or append `; echo` to avoid it.
+
+For multi-character input, the character-by-character echo still appears
+via stderr. There is currently no single-flag way to capture silently.
 
 ---
 
@@ -327,7 +356,7 @@ This is almost always the right choice in scripts.
 
 ## 13. Select Mode
 
-Choose from a list using arrow keys.
+Choose from a list with filter-as-you-type.
 
 ### Basic select
 
@@ -335,8 +364,30 @@ Choose from a list using arrow keys.
 grabchars select "red,green,blue,yellow" -q "Color: "
 ```
 
-Use Up/Down arrows to navigate. Type to filter. Enter to confirm.
-Returns the selected option text.
+The widget shows your filter text, an arrow, the current match, and a
+match count. Type to narrow the list; Up/Down to cycle through matches;
+Enter to confirm. The selected option text goes to stdout.
+
+**Exit code** is the 0-based position of the chosen option in the
+original list (0 = first option, 1 = second, …). Most scripts capture
+the text via `$()` and ignore the exit code; but the exit code lets you
+branch by position without string comparison (see section 19).
+
+### Tab completion
+
+Tab fills the filter field with the full name of the currently
+highlighted match. Useful when options share a long common prefix: type
+enough to isolate the one you want, then Tab to fill it in, then Enter.
+
+```bash
+grabchars select "configure,build,test,install,clean" -q "Step: "
+```
+
+Type `co`, Tab — filter becomes `configure`. Press Enter to confirm.
+
+### Escape to cancel
+
+Escape exits immediately with no output and exit code 255.
 
 ### Select from a file
 
@@ -365,13 +416,64 @@ Auto-selects `yes` after 5 seconds.
 
 ## 14. Select-LR Mode
 
-Horizontal selection — all options visible at once.
+Horizontal selection — all matching options are shown at once on one
+line, with the current selection highlighted.
 
 ```bash
 grabchars select-lr "red,green,blue" -q "Color: "
 ```
 
-Use Left/Right arrows to highlight an option. Enter to confirm.
+The display looks like:
+
+```
+ → [red] green blue  (3 matches)
+```
+
+The selected option text goes to stdout on Enter. **Exit code** is the
+0-based position of the chosen option in the original list, same as
+select mode.
+
+### Filtering the list
+
+Type characters to narrow which options are shown. Only options whose
+names start with the typed prefix remain visible.
+
+```bash
+grabchars select-lr "apple,apricot,banana,blueberry,cherry" -q "Fruit: "
+```
+
+Type `b` — only `banana` and `blueberry` remain. Type `bl` — only
+`blueberry`. Backspace to widen the filter again.
+
+### Navigating with arrow keys
+
+Left/Right (and Up/Down — both pairs work) move the highlight among the
+currently visible matches. The list wraps: pressing Left at the first
+option jumps to the last, and vice versa.
+
+```bash
+grabchars select-lr "small,medium,large,x-large" -q "Size: "
+```
+
+### Home and End
+
+Home jumps to the first visible match; End jumps to the last.
+
+### Tab completion
+
+Tab fills the filter field with the full name of the currently
+highlighted option. Useful for long option names: type enough to isolate
+the one you want, then Tab to lock it in before pressing Enter.
+
+```bash
+grabchars select-lr "configure,build,test,install,clean" -q "Step: "
+```
+
+Type `co`, Tab — filter becomes `configure`. Press Enter to confirm.
+
+### Escape to cancel
+
+Escape exits immediately with no output and exit code 255.
 
 ### Highlight styles (-H)
 
@@ -379,12 +481,15 @@ Use Left/Right arrows to highlight an option. Enter to confirm.
 # Reverse video (default)
 grabchars select-lr "a,b,c" -Hr -q "Reverse: "
 
-# Bracket style
+# Bracket style  →  a [b] c
 grabchars select-lr "a,b,c" -Hb -q "Bracket: "
 
-# Arrow style
+# Arrow style    →  a >b< c
 grabchars select-lr "a,b,c" -Ha -q "Arrow: "
 ```
+
+Bracket and arrow styles are useful on terminals where reverse video is
+hard to see or not supported.
 
 ---
 
@@ -499,16 +604,6 @@ Type letters — they accumulate. Type a digit — grabchars
 automatically advances to the digit group. Enter to finish.
 Both groups require at least one character.
 
-### Hyphenated words (c+-c+)
-
-```bash
-grabchars -m "c+-c+" -r -q "Hyphenated: "
-```
-
-Type letters for the first word. When you type a digit or stop
-typing letters and the next mask element is a literal `-`, the
-dash is auto-inserted. Then type the second word. Enter to finish.
-
 ### Optional prefix (c?nnn)
 
 ```bash
@@ -537,16 +632,20 @@ grabchars -m "[aeiou]+" -r -q "Vowels: "
 Custom character class with a quantifier. Only vowels accepted.
 Enter to finish.
 
-### Two capitalized names (Uc+, Uc+)
+### Two capitalized names (Ul+, Ul+)
 
 ```bash
-grabchars -m "Uc+, Uc+" -r -q "Full name: "
+grabchars -m "Ul+, Ul+" -r -q "Full name: "
 ```
 
 Type an uppercase letter, then lowercase letters for the first name.
-When you type an uppercase letter and the first group's quantifier
-is satisfied, the `, ` literal is auto-inserted and the second
-name begins. Enter to finish.
+When you type the second name's uppercase initial, it fails the
+lowercase `l+` group — the `, ` literal is auto-inserted and the
+second name begins. Enter to finish.
+
+Note: use `l` (lowercase-only) rather than `c` (any letter) for
+the letter groups. With `c+`, the greedy match would consume the
+second name's uppercase initial, making the mask impossible to complete.
 
 ### Zero-or-more (c*n+)
 
@@ -603,24 +702,52 @@ discarded. Without `-f`, they'd be read immediately.
 
 ## 19. Exit Codes
 
+**Normal / mask mode:**
+
 | Scenario | Exit Code |
 |---|---|
-| N characters read | N |
-| Escape pressed (mask mode) | 255 (-1) |
-| Timeout (partial input) | 254 (-2) |
+| N characters read | N (1–253) |
+| Default returned on Enter | 1 (single char) or length of default string |
+| Timeout with partial input | 254 |
+| Escape pressed | 255 |
 | Error (bad flags, bad mask) | 255 |
-| Default returned | 1 (single) or string length |
 | `--version` | 0 |
 | `-h` | 255 |
 
-### Test exit codes in a script
+**Select / select-lr mode:**
+
+| Scenario | Exit Code |
+|---|---|
+| Option selected | 0-based index in the original list |
+| Escape pressed | 255 |
+| Timeout without default | 254 |
+
+The 0-based index means: first option = 0, second = 1, and so on.
+Exit code 0 ("first option chosen") is indistinguishable from the
+conventional Unix success code, so prefer capturing stdout for
+unambiguous results. Use the exit code only when you own the option
+order and know what position 0 means.
+
+### Branch on normal-mode exit code
 
 ```bash
 grabchars -c yn -q "Continue? "
 case $? in
     1) echo "Got one character" ;;
-    255) echo "Error or help" ;;
+    255) echo "Cancelled or error" ;;
     254) echo "Timed out" ;;
+esac
+```
+
+### Branch on select exit code (by position)
+
+```bash
+grabchars select "deploy,rollback,quit" -q "Action: " > /dev/null
+case $? in
+    0) echo "deploy" ;;
+    1) echo "rollback" ;;
+    2) echo "quit" ;;
+    255) echo "cancelled" ;;
 esac
 ```
 
@@ -647,12 +774,35 @@ DATE=$(grabchars -m "nn/nn/nnnn" -q "Enter date (MM/DD/YYYY): ")
 echo "You entered: $DATE"
 ```
 
-### Menu selection
+### Menu selection (capture text)
 
 ```bash
 ACTION=$(grabchars select "deploy,rollback,status,quit" -q "Action: ")
 echo "Selected: $ACTION"
 ```
+
+### Menu selection (branch by exit code)
+
+Select returns the 0-based position of the chosen option as its exit
+code. You can use this to dispatch without string comparison — discard
+stdout with `> /dev/null` and switch on `$?` instead.
+
+The option order in the argument string defines the exit codes:
+`deploy`=0, `rollback`=1, `status`=2, `quit`=3.
+
+```bash
+grabchars select "deploy,rollback,status,quit" -q "Action: " > /dev/null
+case $? in
+    0) deploy ;;
+    1) rollback ;;
+    2) show_status ;;
+    3) exit 0 ;;
+    255) echo "Cancelled." ;;
+esac
+```
+
+This is most useful when the handler is a function or command rather
+than a string comparison — the `case` arms can call code directly.
 
 ### Silent password with confirmation
 
@@ -671,4 +821,32 @@ fi
 ```bash
 MODE=$(grabchars select "fast,normal,careful" -d normal -t 10 -q "Build mode (10s): ")
 echo "Using: $MODE"
+```
+
+### Capture and display simultaneously (-b)
+
+Inside `$()`, stdout is captured by the shell and nothing appears on
+screen. Normally that's fine, but for multi-character input the user
+can't see what they've typed once the subshell exits. `-b` sends output
+to both stdout (captured) and stderr (visible), so the result appears on
+the terminal even though it's also being captured.
+
+```bash
+FILENAME=$(grabchars -n 40 -r -b -q "Filename: ")
+echo "You entered: $FILENAME"
+```
+
+Type `report.txt` — it appears on screen as you type (via stderr) and
+is captured in `$FILENAME` (via stdout).
+
+Without `-b`, the characters echo during typing (that goes to stderr
+regardless), but the final captured value is invisible until `echo`
+prints it. With `-b`, it's visible twice — once as typed, once from
+`echo`. For a cleaner look, suppress the final echo and rely on what
+the user already saw:
+
+```bash
+CONFIRM=$(grabchars -c yn -b -q "Really delete? [y/n] ")
+# $CONFIRM holds the answer; user already saw it echoed
+[ "$CONFIRM" = "y" ] && rm -rf /tmp/scratch
 ```
