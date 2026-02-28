@@ -186,9 +186,9 @@ impl ArgParser {
 
 fn setup_signals() {
     unsafe {
-        libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
-        libc::signal(libc::SIGQUIT, signal_handler as libc::sighandler_t);
-        libc::signal(libc::SIGTSTP, signal_handler as libc::sighandler_t);
+        libc::signal(libc::SIGINT, signal_handler as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGQUIT, signal_handler as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGTSTP, signal_handler as *const () as libc::sighandler_t);
     }
 }
 
@@ -207,7 +207,7 @@ fn setup_alarm(secs: u32) {
         // sigaction with sa_flags=0 guarantees read() returns EINTR on all
         // POSIX systems (macOS, Linux, WSL).
         let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = alarm_handler as libc::sighandler_t;
+        sa.sa_sigaction = alarm_handler as *const () as libc::sighandler_t;
         sa.sa_flags = 0;
         libc::sigaction(libc::SIGALRM, &sa, std::ptr::null_mut());
         libc::alarm(secs);
