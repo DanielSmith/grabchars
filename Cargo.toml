@@ -11,6 +11,9 @@ readme      = "README.md"
 keywords    = ["terminal", "input", "tui", "keystroke", "shell"]
 categories  = ["command-line-utilities"]
 
+[profile.release]
+strip = true
+
 [dependencies]
 libc  = "0.2"
 regex = "1"
