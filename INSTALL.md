@@ -33,9 +33,15 @@ Choose the archive for your platform:
 | File | Platform |
 |------|---------|
 | `grabchars-x86_64-apple-darwin.tar.gz` | macOS Intel |
-| `grabchars-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon (M1/M2/M3) |
+| `grabchars-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon (M1/M2/M3/M4) |
 | `grabchars-x86_64-unknown-linux-gnu.tar.gz` | Linux x86_64 |
-| `grabchars-aarch64-unknown-linux-gnu.tar.gz` | Linux ARM64 |
+| `grabchars-aarch64-unknown-linux-gnu.tar.gz` | Linux ARM64 — Raspberry Pi 4/5 (64-bit OS), AWS Graviton |
+| `grabchars-armv7-unknown-linux-gnueabihf.tar.gz` | Linux ARMv7 32-bit — Raspberry Pi 2/3, or Pi 4 running a 32-bit OS |
+
+**Which Raspberry Pi binary do I need?**
+Pi 4 and Pi 5 ship with 64-bit Raspberry Pi OS by default — use `aarch64`.
+Pi 2 and Pi 3, or any Pi running a 32-bit OS — use `armv7`.
+Not sure? Run `uname -m` on your Pi: `aarch64` = 64-bit, `armv7l` = 32-bit.
 
 Then install:
 
