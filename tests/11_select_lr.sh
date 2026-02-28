@@ -98,4 +98,18 @@ echo
 echo    "  Output was: \"$actual_out\""
 check_output "$actual_out" "no" && check_exit "$actual_exit" "2" && pass || fail "expected 'no' with exit 2"
 
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr --file: load options from a file"
+TMPFILE=$(mktemp)
+printf 'red\ngreen\nblue\n' > "$TMPFILE"
+echo    "  Options loaded from file: red, green, blue"
+instruct "Type 'g' to match 'green', press Enter"
+show_command "select-lr --file /tmp/options.txt"
+echo
+actual_out=$("$GRABCHARS" select-lr --file "$TMPFILE" 2>/dev/null)
+actual_exit=$?
+rm -f "$TMPFILE"
+echo
+check_output "$actual_out" "green" && check_exit "$actual_exit" "5" && pass || fail "expected 'green' with exit 5"
+
 print_summary

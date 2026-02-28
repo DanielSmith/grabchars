@@ -60,7 +60,9 @@ grabchars [-b] [-c chars] [-C exclude] [-d default] [-e] [-f] [-m mask]
           [-E[0|1]] [-H[r|b|a]] [-L] [-U] [-Z[0|1]]
 
 grabchars select  [opts] "item1,item2,..."   # vertical list
+grabchars select  [opts] --file filename     # vertical list from file
 grabchars select-lr [opts] "item1,item2,..." # horizontal list
+grabchars select-lr [opts] --file filename   # horizontal list from file
 ```
 
 ### Flags Reference

@@ -121,6 +121,7 @@ fn print_usage() {
         "grabchars select <options>      inline select from comma-separated list",
         "grabchars select --file <f>     inline select from file (one per line)",
         "grabchars select-lr <options>   horizontal select with all matches shown",
+        "grabchars select-lr --file <f>  horizontal select from file (one per line)",
     ];
     for line in &usage {
         eprintln!("{}", line);
@@ -129,9 +130,10 @@ fn print_usage() {
 
 fn print_select_usage() {
     let usage = [
-        "usage: grabchars select <options>      inline select from comma-separated list",
-        "       grabchars select --file <f>     inline select from file (one per line)",
-        "       grabchars select-lr <options>   horizontal select with all matches shown",
+        "usage: grabchars select <options>          inline select from comma-separated list",
+        "       grabchars select --file <f>         inline select from file (one per line)",
+        "       grabchars select-lr <options>       horizontal select with all matches shown",
+        "       grabchars select-lr --file <f>      horizontal select from file (one per line)",
         "       -p<prompt>                      prompt text",
         "       -d<default>                     default selection",
         "       -t<seconds>                     timeout",

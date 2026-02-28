@@ -471,6 +471,13 @@ grabchars select-lr "configure,build,test,install,clean" -q "Step: "
 
 Type `co`, Tab — filter becomes `configure`. Press Enter to confirm.
 
+### Select from a file
+
+```bash
+echo -e "apple\nbanana\ncherry\ndate" > /tmp/fruits.txt
+grabchars select-lr --file /tmp/fruits.txt -q "Fruit: "
+```
+
 ### Escape to cancel
 
 Escape exits immediately with no output and exit code 255.

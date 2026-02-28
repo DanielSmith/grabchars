@@ -243,6 +243,13 @@ not launch iTerm2 if it is not already open.
 error. Run the script manually and look at the exit output in the window before
 it closes, or add `sleep 5` at the end of the generated runner for debugging.
 
+**iTerm2 shows "A session ended very soon after starting" warning** — This is
+expected. grabchars exits as soon as input is complete, which iTerm2 flags as
+suspicious. To suppress it: in the dialog, check "Suppress this message
+permanently". Or go to Preferences → Profiles → [profile] → Session tab and
+uncheck "Warn when session ends immediately". The warning does not affect
+functionality.
+
 **Result is always `{"status":"error","message":"timed out waiting for window"}`**
 — The poll timeout is set to `TIMEOUT + 15` seconds. If the window is taking
 longer to appear (slow machine or iTerm2 startup), try increasing the timeout

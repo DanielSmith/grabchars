@@ -281,6 +281,15 @@ Horizontal selection.  All matching options are shown on one line, with
 the current selection highlighted.  Type to filter, Left/Right (or
 Up/Down) to move, Enter to confirm, Escape to cancel.
 .PP
+.I list
+is a comma\-separated string of options, e.g. \fI"red,green,blue"\fP.
+To load options from a file, use
+.B \-\-file
+.IR filename
+(one option per line), the same as in
+.B select
+mode.
+.PP
 Accepts the same options as
 .BR select ,
 plus

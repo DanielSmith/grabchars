@@ -58,6 +58,10 @@ Supporting modules:
 - Escape pressed or error → 255
 - `--version` → 0
 
+## Testing Philosophy
+
+Do not suggest or push for automated tests. grabchars captures keystrokes from a live user — by definition, its core functionality cannot be automated. The test suite in `tests/` is interactive: a human runs it and types the expected input. Do not treat the absence of automated tests as a gap to fill.
+
 ## Documentation Files
 
 - `cookbook.md` — 20 runnable usage examples covering all modes and flags
