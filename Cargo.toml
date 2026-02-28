@@ -1,11 +1,16 @@
 [package]
-name = "grabchars"
-version = "2.0.0-a1"
-edition = "2024"
+name        = "grabchars"
+version     = "2.0.0"
+edition     = "2024"
 description = "Get keystrokes directly from user - a Rust port of my 1988 Unix utility"
-authors = ["Daniel Smith"]
-license = "Apache-2.0"
+authors     = ["Daniel Smith"]
+license     = "Apache-2.0"
+repository  = "https://github.com/DanielSmith/grabchars"
+homepage    = "https://github.com/DanielSmith/grabchars"
+readme      = "README.md"
+keywords    = ["terminal", "input", "tui", "keystroke", "shell"]
+categories  = ["command-line-utilities"]
 
 [dependencies]
-libc = "0.2"
+libc  = "0.2"
 regex = "1"

@@ -1,0 +1,496 @@
+''' Man page for grabchars 2.0
+''' Uses Larry Wall's "patch" man page as a structural template.
+.de Sh
+.br
+.ne 5
+.PP
+\fB\\$1\fR
+.PP
+..
+.de Sp
+.if t .sp .5v
+.if n .sp
+..
+'''
+'''     Set up \*(-- to give an unbreakable dash;
+'''     string Tr holds user defined translation string.
+'''     Bell System Logo is used as a dummy character.
+'''
+.ie n \{\
+.tr \(bs-\*(Tr
+.ds -- \(bs-
+.if (\n(.H=4u)&(1m=24u) .ds -- \(bs\h'-12u'\(bs\h'-12u'-\" diablo 10 pitch
+.if (\n(.H=4u)&(1m=20u) .ds -- \(bs\h'-12u'\(bs\h'-8u'-\" diablo 12 pitch
+.ds L" ""
+.ds R" ""
+.ds L' '
+.ds R' '
+'br\}
+.el\{\
+.ds -- \(em\|
+.tr \*(Tr
+.ds L" ``
+.ds R" ''
+.ds L' `
+.ds R' '
+'br\}
+.TH GRABCHARS 1 "2026" "grabchars 2.0.0" "User Commands"
+.SH NAME
+grabchars \- get keystrokes directly from user
+.SH SYNOPSIS
+.B grabchars
+[options]
+.PP
+.B grabchars select
+[options]
+.I list
+.PP
+.B grabchars select\-lr
+[options]
+.I list
+.SH DESCRIPTION
+\fBGrabchars\fP gets characters from the user as they are
+typed in, without having to wait for the return key to
+be pressed.  Among other things, this allows shell scripts
+to be written with highly interactive menus.
+.PP
+By default,
+.I grabchars
+will obtain one character from stdin, echo that character to stdout,
+and return with a status of one; meaning one character read.
+.PP
+In addition to the basic character-reading mode,
+.I grabchars
+provides a positional mask mode
+.RB ( \-m ),
+a filter-as-you-type vertical selection menu
+.RB ( select ),
+and a horizontal selection menu
+.RB ( select\-lr ).
+.SH OPTIONS
+.TP 5
+.B \-b
+Both
+.I stdout
+and
+.I stderr
+are used for output.  This is useful for setting a variable in
+a shell script and echoing a keystroke to the screen at the
+same time.
+.TP 5
+.B \-c<valid characters>
+Only characters in
+.I <valid characters>
+are accepted.  Regular expressions such as [a\-z]
+may be used to specify ranges.  All other characters are ignored.
+.TP 5
+.B \-C<excluded characters>
+The inverse of \fB\-c\fP.  Rejects characters that match the pattern;
+accepts everything else.  Uses the same character class syntax as
+.BR \-c .
+Both flags may be combined: a character must match
+.B \-c
+AND not match
+.BR \-C .
+.TP 5
+.B \-d<char(s)>
+Default char or string to output if the user hits
+.B RETURN
+or lets
+.B grabchars
+timeout.  The status that is returned is the same as if the user had
+typed in the character or string, so this option may be used with
+the
+.B \-s
+(silent) flag.
+.TP 5
+.B \-e
+Output goes to
+.I stderr
+rather than
+.I stdout.
+.TP 5
+.B \-E
+.TP 5
+.B \-E1
+Enable line editing.  Arrow keys, Home, End, Backspace, Delete,
+Ctrl\-K, Ctrl\-U, and Ctrl\-W are active.
+When
+.B \-n
+is greater than 1, editing is on by default.
+See
+.B LINE EDITING
+below.
+.TP 5
+.B \-E0
+Disable line editing.  Backspace and arrow keys are treated as raw
+bytes, not editing commands.  Useful when you want to capture every
+keystroke exactly as typed.
+.TP 5
+.B \-f
+Flush any previous input.  By default,
+.I grabchars
+will see any characters present in
+.I stdin,
+which allows for some typeahead in shell scripts.
+.TP 5
+.B \-h
+Help/usage screen.
+.TP 5
+.B \-H<r|b|a>
+Highlight style for
+.B select\-lr
+mode.
+.B \-Hr
+uses reverse video (default);
+.B \-Hb
+uses bracket style (\fI[option]\fP);
+.B \-Ha
+uses arrow style (\fI>option<\fP).
+Bracket and arrow styles are useful on terminals where reverse video
+is unavailable or hard to see.
+.TP 5
+.B \-L
+Map characters to lower case.
+.TP 5
+.B \-m<mask>
+Positional input validation.  Each character position is validated
+against a corresponding element in the mask pattern.  Characters that
+do not match the mask at the current position are silently rejected.
+Literal characters in the mask (parens, dashes, slashes, etc.) are
+auto\-inserted into the display as the user types.
+The mask length determines the character count (like an implicit
+.BR \-n ).
+See
+.B MASK SYNTAX
+below.
+.TP 5
+.B \-n<number>
+Number of characters to read.  By default,
+.I grabchars
+looks for one character.
+.TP 5
+.B \-p<prompt>
+Sets up a prompt for the user, printed to
+.IR stdout .
+See
+.BR EXAMPLES .
+.TP 5
+.B \-q<prompt>
+Sets up a prompt for the user, printed to
+.I stderr
+rather than
+.IR stdout .
+This is almost always the right choice in scripts, because stdout
+can then be captured with
+.IR $() .
+.TP 5
+.B \-r
+The
+.B RETURN
+key exits.  Use this with the
+.B \-n
+option to allow for variable numbers of characters to be typed in.
+In mask mode with quantifiers, Enter also accepts partial input when
+all required mask elements have their minimum counts satisfied.
+.TP 5
+.B \-R
+Raw byte mode.  Every byte read from the terminal is collected as-is,
+without escape-sequence parsing.  This means arrow keys and other
+multi-byte sequences count as multiple bytes toward
+.BR \-n .
+The flags
+.BR \-c ,
+.BR \-C ,
+.BR \-U ,
+.BR \-L ,
+and
+.B \-E
+are silently ignored in raw mode.
+See
+.B RAW MODE
+below.
+.TP 5
+.B \-s
+Silent.  Do not output anything. Just return a status.
+.TP 5
+.B \-t<seconds>
+Time to allow the user to respond.  By default, the user
+can take as long as he or she wants to.  The timeout option allows
+you to write shell scripts where you can offer some assistance
+if it's obvious that the user might be stuck.  If a default
+.RB ( \-d )
+is set and the user has typed nothing, the default is returned on
+timeout; otherwise the exit code is 254.
+.TP 5
+.B \-U
+Map characters to upper case.  Note that if \fB\-U\fP and \fB\-L\fP
+are both specified on the command line, the last one that occurs
+will win out.
+.TP 5
+.B \-Z0
+Suppress the trailing newline that
+.I grabchars
+normally prints to
+.I stderr
+after input is complete.
+.TP 5
+.B \-Z1
+Re\-enable the trailing newline (the default).
+.TP 5
+.B \-\-version
+Print the version string and exit with code 0.
+.SH SUBCOMMANDS
+.SS "grabchars select \fIlist\fP [options]"
+Choose from a comma\-separated list with filter\-as\-you\-type narrowing.
+The selected option text is written to stdout.  The exit code is the
+0\-based position of the chosen option in the original list.
+.PP
+.I list
+is a comma\-separated string of options, e.g. \fI"red,green,blue"\fP.
+To load options from a file, use
+.B \-\-file
+.IR filename .
+.PP
+Controls:
+.RS
+.TP 8
+type
+Narrow the list (filter\-as\-you\-type)
+.TP 8
+Backspace
+Widen the filter
+.TP 8
+Up / Down
+Cycle through matching options
+.TP 8
+Tab
+Fill filter with full name of current match
+.TP 8
+Enter
+Confirm selection; output to stdout
+.TP 8
+Escape
+Cancel; no output; exit code 255
+.RE
+.PP
+Options \fB\-d\fP, \fB\-t\fP, \fB\-q\fP, \fB\-e\fP, \fB\-b\fP, \fB\-f\fP, and \fB\-Z0\fP/\fB\-Z1\fP
+all apply in select mode.
+.SS "grabchars select\-lr \fIlist\fP [options]"
+Horizontal selection.  All matching options are shown on one line, with
+the current selection highlighted.  Type to filter, Left/Right (or
+Up/Down) to move, Enter to confirm, Escape to cancel.
+.PP
+Accepts the same options as
+.BR select ,
+plus
+.B \-H<r|b|a>
+for highlight style.
+.SH LINE EDITING
+When
+.B \-n
+is greater than 1, line editing is active by default
+(equivalent to
+.BR \-E1 ).
+Disable with
+.BR \-E0 .
+Force on for a single character with
+.BR \-E .
+.PP
+.nf
+Key             Action
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-  \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+Left / Ctrl\-B   Move cursor left one character
+Right / Ctrl\-F  Move cursor right one character
+Home / Ctrl\-A   Move to beginning of line
+End / Ctrl\-E    Move to end of line
+Backspace       Delete character before cursor
+Delete / Ctrl\-D Delete character under cursor
+Ctrl\-K          Kill (delete) from cursor to end of line
+Ctrl\-U          Kill from beginning of line to cursor
+Ctrl\-W          Kill word backward
+.fi
+.SH MASK SYNTAX
+A mask is specified with
+.B \-m\fI"pattern"\fP
+and constrains input position by position.  Literal characters in
+the pattern (parentheses, slashes, dashes, etc.) are auto\-inserted
+into the display as the user types.
+.PP
+.B Mask character classes:
+.PP
+.nf
+Code  Accepts                 Character set
+\-\-\-\-  \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-   \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+U     Uppercase letter        [A\-Z]
+l     Lowercase letter        [a\-z]
+c     Alphabetic character    [A\-Za\-z]
+n     Digit                   [0\-9]
+x     Hexadecimal digit       [0\-9A\-Fa\-f]
+p     Punctuation             [!\-/:\-@[\-`{\-~]
+W     Whitespace              space or tab
+.     Any character
+[...] Custom character class  same syntax as \-c
+.fi
+.PP
+Any character not listed above is treated as a literal and will be
+auto\-inserted.  To use a mask code character as a literal, escape
+it with a backslash (e.g., \fB\\\\n\fP for a literal \fIn\fP).
+.PP
+.B Quantifiers
+(follow the preceding mask element):
+.PP
+.nf
+*   Zero or more (greedy; requires Enter to complete)
++   One or more (greedy; requires Enter to complete)
+?   Zero or one (optional)
+.fi
+.PP
+Quantifiers cannot be applied to literal characters.
+.SH RAW MODE
+With
+.BR \-R ,
+.I grabchars
+bypasses its escape\-sequence parser.  Every byte received from the
+terminal is collected as\-is; multi\-byte sequences such as arrow keys
+(ESC [ A = three bytes for Up) count as three bytes toward
+.BR \-n .
+.PP
+Raw mode is useful for key\-binding capture, debugging what byte
+sequences a terminal sends, or any situation where you need the
+exact bytes that keys produce.
+.PP
+Output is binary; pipe to
+.BR xxd (1)
+or
+.BR od (1)
+to inspect:
+.PP
+.RS
+.B grabchars \-R \-n 3 | xxd
+.RE
+.SH EXAMPLES
+.TP 5
+.B grabchars
+gets one keystroke
+.TP 5
+.B grabchars \-caeiou
+get one of the vowels
+.TP 5
+.B grabchars \-c i
+get the letter 'i'
+.TP 5
+.B grabchars \-C aeiou
+get any character except a vowel
+.TP 5
+.B grabchars '\-penter a letter '
+print the prompt "enter a letter "
+.TP 5
+.B grabchars '\-qenter a letter '
+print the prompt ('q' for question) "enter a letter " through
+.IR stderr .
+.TP 5
+.B grabchars \-n4
+get four characters.
+.TP 5
+.B grabchars \-d a
+If the first character typed is a
+.BR RETURN ,
+expand it to 'a'.
+.TP 5
+.B grabchars \-d gumby
+If the first character typed is a
+.BR RETURN ,
+expand it to "gumby".
+.TP 5
+.B grabchars \-r
+The
+.B RETURN
+key will exit
+.IR grabchars .
+You would use this with the
+.B \-n
+option, so that variable numbers of characters may be entered.
+.TP
+.B grabchars \-n 4 \-r \-t 10
+Accept up to four characters, or exit when
+.B RETURN
+is hit, or exit when 10 seconds have elapsed.
+.TP 5
+.B grabchars \-t2
+timeout after two seconds.
+.TP 5
+.B grabchars \-d gumby \-t2
+If the first character typed is a
+.BR RETURN ,
+or if two seconds have gone by,
+pretend that the user typed in "gumby".
+.TP 5
+.B grabchars \-n3 \-p 'initials: '
+print a prompt and grab three characters.
+.TP 5
+.B grabchars \-c 0123456789 \-n2 \-t10
+get two numbers with a ten second timeout.
+.TP 5
+.B grabchars \-m "(nnn) nnn\-nnnn" \-q "Phone: "
+read a full phone number with auto\-inserted punctuation.
+.TP 5
+.B grabchars \-m "nn/nn/nnnn" \-q "Date (MM/DD/YYYY): "
+read a date; slashes are inserted automatically.
+.TP 5
+.B grabchars \-m "#xxxxxx" \-q "Hex color: "
+the leading \fI#\fP is auto\-inserted; read six hex digits.
+.TP 5
+.B grabchars select "yes,no,cancel" \-q "Action: "
+present a filter\-as\-you\-type vertical menu.
+.TP 5
+.B grabchars select\-lr "small,medium,large" \-q "Size: "
+present a horizontal selection menu.
+.TP 5
+.B grabchars \-R \-n 3 \-q "Press an arrow key: " | xxd
+capture raw bytes; an arrow key produces three bytes (e.g. 1b 5b 41).
+.PP
+Note that arguments like "\-n4" or "\-n 4" are handled the same way.
+.SH DIAGNOSTICS
+.I Grabchars
+returns the number of characters (or bytes, in raw mode) successfully
+read — typically 1 for a single keystroke.
+.PP
+Special exit codes:
+.PP
+.nf
+254   Timeout with no input and no default set
+255   Escape pressed, bad arguments, or other error
+0     \-\-version flag
+.fi
+.PP
+In
+.B select
+and
+.B select\-lr
+modes, the exit code is the 0\-based index of the chosen option in
+the original list (0 = first option, 1 = second, etc.).  Escape
+returns 255; timeout without a default returns 254.
+.SH SEE ALSO
+.BR sh (1),
+.BR bash (1),
+.BR read (1),
+.BR xxd (1),
+.BR od (1)
+.PP
+Full documentation is in the source distribution:
+.PP
+.nf
+README.md       \-\- flag reference
+docs/cookbook.md  \-\- 21 runnable examples
+docs/maskInput.md \-\- mask syntax reference
+docs/RAW\-MODE.md  \-\- raw byte mode reference
+.fi
+.SH AUTHOR
+Dan Smith
+.PP
+Originally written by me, in C, in 1988 and posted to
+.IR comp.sources.misc .
+Rewritten in Rust in 2025\(en2026 as grabchars 2.0.
+.PP
+Source: https://github.com/DanielSmith/grabchars
