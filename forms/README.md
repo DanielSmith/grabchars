@@ -75,14 +75,20 @@ Expected output:
 
 Requires a JSON field-spec file. A sample is provided:
 
+**Prompt writing guidelines:**
+- `masked` fields: the form automatically appends the mask pattern to the prompt (e.g. `[nnnn]`), so the user always sees the expected format. You don't need to repeat it in the prompt text, but a short label like `"Port: "` is still helpful.
+- `yn` fields: include `[y/n]` or `[Y/n]` in the prompt to show the default.
+- `text` fields: mention any constraints — `"App name (letters/digits, max 30): "`.
+- `select` / `select-lr` fields: the prompt alone is enough — the options are visible on screen.
+
 ```bash
 # Create a sample fields file
 cat > /tmp/test-fields.json << 'EOF'
 [
-  { "name": "app_name",    "type": "text",      "prompt": "App name: ",      "maxlen": 30 },
-  { "name": "port",        "type": "masked",     "prompt": "Port: ",          "mask": "nnnn", "default": "8080" },
-  { "name": "environment", "type": "select",     "prompt": "Environment: ",   "choices": "dev,staging,prod" },
-  { "name": "confirmed",   "type": "yn",         "prompt": "Looks good? ",    "default": "y", "timeout": 15 }
+  { "name": "app_name",    "type": "text",      "prompt": "App name (letters/digits): ",  "maxlen": 30 },
+  { "name": "port",        "type": "masked",     "prompt": "Port (4 digits): ",            "mask": "nnnn", "default": "8080" },
+  { "name": "environment", "type": "select",     "prompt": "Environment: ",                "choices": "dev,staging,prod" },
+  { "name": "confirmed",   "type": "yn",         "prompt": "Looks good? [y/n] ",           "default": "y", "timeout": 15 }
 ]
 EOF
 

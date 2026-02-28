@@ -85,7 +85,7 @@ TIMEOUT_FLAGS=""
     printf 'TIMEOUT_FLAGS=%s\n' "$(printf '%q' "$TIMEOUT_FLAGS")"
     cat << 'BODY'
 # shellcheck disable=SC2086
-RESULT=$("$GRABCHARS" "$SUBCMD" $DEFAULT_FLAGS $TIMEOUT_FLAGS -q "$PROMPT" "$OPTIONS")
+RESULT=$("$GRABCHARS" "$SUBCMD" "$OPTIONS" $DEFAULT_FLAGS $TIMEOUT_FLAGS -q "$PROMPT")
 EXIT=$?
 if [ "$EXIT" -eq 255 ]; then
     printf '{"status":"cancelled"}' > "$OUTPUT"

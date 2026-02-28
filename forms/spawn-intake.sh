@@ -113,14 +113,15 @@ rm -f "$OUTPUT_FILE" "$DONE_FILE"
 
         FIELD_NAMES+=("$name")
 
-        # Emit a label line
-        printf 'printf "  %%s\\n" %s\n' "$(printf '%q' "$prompt")"
+        # Field counter prefix: "(1/4) "
+        COUNTER="($((i+1))/$FIELD_COUNT) "
+        FULL_PROMPT="  ${COUNTER}${prompt}"
 
         # Emit the grabchars call, capturing stdout to V_<name>
         case "$type" in
             text)
                 printf 'V_%s=$("$GRABCHARS" -n %s -r -q %s 2>/dev/tty)\n' \
-                    "$name" "$maxlen" "$(printf '%q' "  ")"
+                    "$name" "$maxlen" "$(printf '%q' "$FULL_PROMPT")"
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;
             masked)
@@ -129,8 +130,10 @@ rm -f "$OUTPUT_FILE" "$DONE_FILE"
                     printf 'V_%s=""\n' "$name"
                     continue
                 }
+                # Auto-append mask pattern to prompt so user knows the expected format
+                MASKED_PROMPT="${FULL_PROMPT% }  [${mask}] "
                 printf 'V_%s=$("$GRABCHARS" -m %s -q %s 2>/dev/tty)\n' \
-                    "$name" "$(printf '%q' "$mask")" "$(printf '%q' "  ")"
+                    "$name" "$(printf '%q' "$mask")" "$(printf '%q' "$MASKED_PROMPT")"
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;
             select)
@@ -141,8 +144,8 @@ rm -f "$OUTPUT_FILE" "$DONE_FILE"
                 }
                 DEFAULT_FLAG=""
                 [[ -n "$default" ]] && DEFAULT_FLAG="-d $(printf '%q' "$default")"
-                printf 'V_%s=$("$GRABCHARS" select %s -q %s %s 2>/dev/tty)\n' \
-                    "$name" "$DEFAULT_FLAG" "$(printf '%q' "  $prompt")" "$(printf '%q' "$choices")"
+                printf 'V_%s=$("$GRABCHARS" select %s %s -q %s 2>/dev/tty)\n' \
+                    "$name" "$(printf '%q' "$choices")" "$DEFAULT_FLAG" "$(printf '%q' "$FULL_PROMPT")"
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;
             select-lr)
@@ -153,13 +156,13 @@ rm -f "$OUTPUT_FILE" "$DONE_FILE"
                 }
                 DEFAULT_FLAG=""
                 [[ -n "$default" ]] && DEFAULT_FLAG="-d $(printf '%q' "$default")"
-                printf 'V_%s=$("$GRABCHARS" select-lr %s -q %s %s 2>/dev/tty)\n' \
-                    "$name" "$DEFAULT_FLAG" "$(printf '%q' "  $prompt")" "$(printf '%q' "$choices")"
+                printf 'V_%s=$("$GRABCHARS" select-lr %s %s -q %s 2>/dev/tty)\n' \
+                    "$name" "$(printf '%q' "$choices")" "$DEFAULT_FLAG" "$(printf '%q' "$FULL_PROMPT")"
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;
             secret)
                 printf 'V_%s=$("$GRABCHARS" -n %s -r -s -e -q %s 2>/dev/tty)\n' \
-                    "$name" "$maxlen" "$(printf '%q' "  ")"
+                    "$name" "$maxlen" "$(printf '%q' "$FULL_PROMPT")"
                 printf 'printf "\\n" >&2\n'
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;
@@ -168,7 +171,7 @@ rm -f "$OUTPUT_FILE" "$DONE_FILE"
                 [[ -n "$default" ]] && YNFLAGS="$YNFLAGS -d $(printf '%q' "$default")"
                 [[ "$timeout" -gt 0 ]] && YNFLAGS="$YNFLAGS -t $timeout"
                 printf 'V_%s=$("$GRABCHARS" %s -b -q %s 2>/dev/tty)\n' \
-                    "$name" "$YNFLAGS" "$(printf '%q' "  ")"
+                    "$name" "$YNFLAGS" "$(printf '%q' "$FULL_PROMPT")"
                 printf 'printf "\\n" >&2\n'
                 printf '[[ $? -eq 255 ]] && { printf '"'"'{"status":"cancelled"}'"'"' > "$OUTPUT"; printf done > "$DONE"; exit 0; }\n'
                 ;;

@@ -58,6 +58,64 @@ Supporting modules:
 - Escape pressed or error → 255
 - `--version` → 0
 
+## Interactive Forms
+
+The `forms/` directory contains scripts for getting user input via grabchars
+when Claude needs a decision, selection, or structured data.
+
+```
+FORMS=/usr/local/projects/grabchars-2.0/grabchars/forms
+```
+
+### INTERACTIVE DECISIONS
+
+When you need user approval before a destructive or irreversible operation,
+do NOT ask in chat. Instead, spawn a decision window:
+
+```bash
+result=$("$FORMS/spawn-decision.sh" "QUESTION" [default: y|n] [timeout: seconds])
+status=$(echo "$result" | jq -r '.status')
+```
+
+- If status is "n" or "cancelled": abort and explain in chat.
+- If status is "y": proceed.
+- Destructive operations default to "n". Confirmations default to "y".
+
+Examples where this applies:
+- Deleting files or directories
+- Overwriting uncommitted changes
+- Pushing to a remote branch
+- Running a migration or schema change
+
+### INTERACTIVE SELECTION
+
+When you need the user to choose from a known set of options:
+
+```bash
+result=$("$FORMS/spawn-select.sh" "opt1,opt2,opt3" "PROMPT" [v|h] [default] [timeout])
+value=$(echo "$result" | jq -r '.value')
+```
+
+Use layout "v" for lists longer than 4 items (filter-as-you-type).
+Use layout "h" for 2–4 short options (left/right selection).
+
+- If status is "cancelled": stop and ask the user in chat.
+
+### INTERACTIVE INTAKE
+
+For collecting structured input, write a fields JSON file and call spawn-intake.sh:
+
+```bash
+result=$("$FORMS/spawn-intake.sh" /path/to/fields.json "Form Title")
+data=$(echo "$result" | jq '.data')
+```
+
+- If status is "cancelled": stop and ask the user what they want to do.
+- If status is "submitted": extract field values from .data and proceed.
+
+Use intake forms when you need 2 or more structured values before starting
+work. For a single value, use spawn-decision or spawn-select instead.
+
 ## Testing Philosophy
 
 Do not suggest or push for automated tests. grabchars captures keystrokes from a live user — by definition, its core functionality cannot be automated. The test suite in `tests/` is interactive: a human runs it and types the expected input. Do not treat the absence of automated tests as a gap to fill.
