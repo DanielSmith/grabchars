@@ -77,7 +77,30 @@ brew upgrade grabchars
 
 ---
 
-## 4. Build from source
+## 4. AUR (Arch Linux and derivatives — CachyOS, Manjaro, etc.)
+
+Two packages are available. Choose one:
+
+**Pre-built binary** (no Rust toolchain required):
+```bash
+paru -S grabchars-bin
+# or
+yay -S grabchars-bin
+```
+
+**Build from source** (requires Rust):
+```bash
+paru -S grabchars
+# or
+yay -S grabchars
+```
+
+The two packages conflict with each other — install one or the other. Both
+provide the `grabchars` command.
+
+---
+
+## 5. Build from source
 
 Requires [Rust](https://rustup.rs/) 1.85 or later (edition 2024).
 

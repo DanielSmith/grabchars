@@ -240,6 +240,12 @@ conventions. This Rust port is a complete rewrite.
 
 ---
 
+## The Name
+
+It is pronounced "grab cares", as in "caring" and "characters"  It is not, and never has been "grab sharz" or "grab carz"
+
+---
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE) ([http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)).
