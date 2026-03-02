@@ -19,19 +19,38 @@ use std::sync::atomic::Ordering;
 
 use crate::input::{self, KeyInput};
 use crate::output::{self, CURSOR_LEFT, CURSOR_RIGHT, CLEAR_TO_EOL, REVERSE_ON, REVERSE_OFF};
-use crate::{Flags, HighlightStyle, TIMED_OUT};
+use crate::{FilterStyle, Flags, HighlightStyle, TIMED_OUT};
 
 // ---------------------------------------------------------------------------
 // Select mode
 // ---------------------------------------------------------------------------
 
-/// Return indices of options whose lowercase starts with the given filter.
-fn compute_matches(options: &[String], filter: &str) -> Vec<usize> {
+/// Subsequence check: every character of `filter` must appear in `opt` in order,
+/// with any number of characters in between (equivalent to `c.*c.*c` regex).
+fn fuzzy_match(opt: &str, filter: &str) -> bool {
+    let mut opt_chars = opt.chars();
+    for fc in filter.chars() {
+        if !opt_chars.any(|c| c == fc) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Return indices of options that match `filter` according to `style`.
+fn compute_matches(options: &[String], filter: &str, style: &FilterStyle) -> Vec<usize> {
     let filter_lower = filter.to_lowercase();
     options
         .iter()
         .enumerate()
-        .filter(|(_, opt)| opt.to_lowercase().starts_with(&filter_lower))
+        .filter(|(_, opt)| {
+            let opt_lower = opt.to_lowercase();
+            match style {
+                FilterStyle::Prefix   => opt_lower.starts_with(&filter_lower),
+                FilterStyle::Fuzzy    => fuzzy_match(&opt_lower, &filter_lower),
+                FilterStyle::Contains => opt_lower.contains(&filter_lower),
+            }
+        })
         .map(|(i, _)| i)
         .collect()
 }
@@ -104,7 +123,7 @@ pub fn run_select_mode(
 ) -> i32 {
     let mut filter: Vec<u8> = Vec::new();
     let mut cursor_pos: usize = 0;
-    let mut matches = compute_matches(options, "");
+    let mut matches = compute_matches(options, "", &flags.filter_style);
     let mut match_idx: usize = 0;
     let mut prev_width: usize = 0;
 
@@ -164,7 +183,7 @@ pub fn run_select_mode(
                 filter.insert(cursor_pos, ch as u8);
                 cursor_pos += 1;
                 let filter_str = String::from_utf8_lossy(&filter);
-                matches = compute_matches(options, &filter_str);
+                matches = compute_matches(options, &filter_str, &flags.filter_style);
                 if match_idx >= matches.len() {
                     match_idx = 0;
                 }
@@ -177,7 +196,7 @@ pub fn run_select_mode(
                     filter.remove(cursor_pos - 1);
                     cursor_pos -= 1;
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -190,7 +209,7 @@ pub fn run_select_mode(
                 if cursor_pos < filter.len() {
                     filter.remove(cursor_pos);
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -242,7 +261,7 @@ pub fn run_select_mode(
                 if cursor_pos < filter.len() {
                     filter.truncate(cursor_pos);
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -256,7 +275,7 @@ pub fn run_select_mode(
                     filter.drain(..cursor_pos);
                     cursor_pos = 0;
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -277,7 +296,7 @@ pub fn run_select_mode(
                     filter.drain(new_pos..cursor_pos);
                     cursor_pos = new_pos;
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -312,7 +331,7 @@ pub fn run_select_mode(
                     filter = selected.as_bytes().to_vec();
                     cursor_pos = filter.len();
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     // Find the same option in the new matches
                     match_idx = 0;
                     let sel_lower = selected.to_lowercase();
@@ -461,7 +480,7 @@ pub fn run_select_lr_mode(
 ) -> i32 {
     let mut filter: Vec<u8> = Vec::new();
     let mut cursor_pos: usize = 0;
-    let mut matches = compute_matches(options, "");
+    let mut matches = compute_matches(options, "", &flags.filter_style);
     let mut match_idx: usize = 0;
     let mut prev_width: usize = 0;
 
@@ -523,7 +542,7 @@ pub fn run_select_lr_mode(
                 filter.insert(cursor_pos, ch as u8);
                 cursor_pos += 1;
                 let filter_str = String::from_utf8_lossy(&filter);
-                matches = compute_matches(options, &filter_str);
+                matches = compute_matches(options, &filter_str, &flags.filter_style);
                 if match_idx >= matches.len() {
                     match_idx = 0;
                 }
@@ -539,7 +558,7 @@ pub fn run_select_lr_mode(
                     filter.remove(cursor_pos - 1);
                     cursor_pos -= 1;
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -555,7 +574,7 @@ pub fn run_select_lr_mode(
                 if cursor_pos < filter.len() {
                     filter.remove(cursor_pos);
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     if match_idx >= matches.len() {
                         match_idx = 0;
                     }
@@ -619,7 +638,7 @@ pub fn run_select_lr_mode(
                 // Clear the filter
                 filter.clear();
                 cursor_pos = 0;
-                matches = compute_matches(options, "");
+                matches = compute_matches(options, "", &flags.filter_style);
                 if match_idx >= matches.len() {
                     match_idx = 0;
                 }
@@ -636,7 +655,7 @@ pub fn run_select_lr_mode(
                     filter = selected.as_bytes().to_vec();
                     cursor_pos = filter.len();
                     let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str);
+                    matches = compute_matches(options, &filter_str, &flags.filter_style);
                     match_idx = 0;
                     let sel_lower = selected.to_lowercase();
                     for (i, idx) in matches.iter().enumerate() {

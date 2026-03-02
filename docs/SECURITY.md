@@ -140,24 +140,108 @@ through a sanitizer before displaying it to another party.
 
 ---
 
-## ReDoS in mask mode custom character classes
+## Mask mode (`-m`) security considerations
 
-The `-m` mask flag compiles user-supplied bracket expressions (e.g., `[a-z]`)
-into `regex` crate patterns. The `regex` crate uses a linear-time NFA engine
-and is **not** susceptible to catastrophic backtracking in the general case.
-However, when multiple quantified elements appear adjacent in a mask, the
-resulting combined pattern may expose exponential behaviour in edge cases.
+The `-m` flag compiles `[...]` bracket expressions into individual per-element
+`regex::Regex` patterns — one per character position, each matching exactly one
+character (`^[class]$`). This is **not** susceptible to ReDoS: the regex crate
+uses a linear-time NFA engine, and single-character matches have no backtracking
+surface regardless of how many quantified elements appear adjacent in the mask.
 
-**Example of a problematic mask:**
+The real concerns with `-m` are semantic, not algorithmic.
+
+### Dynamically constructed masks
+
+If a script builds the mask string from an environment variable, config file,
+or any other externally-controlled source, an attacker who controls that value
+can replace a restrictive mask with a permissive one:
+
 ```bash
-grabchars -m '[a-z]*[a-z]*[a-z]*[a-z]*' -r
+# Script reads field constraints from a shared config file
+AMOUNT_MASK=$(jq -r '.masks.amount' deploy-config.json)
+AMOUNT=$(grabchars -m "$AMOUNT_MASK" -q "Transfer amount: \$")
+process_transfer "$AMOUNT"
 ```
 
-This is only exploitable if the mask string is constructed from untrusted
-input — which would be an unusual script design. The mask string is supplied
-by the script author, not the user typing keystrokes.
+Normal config: `"masks": { "amount": "n+\\.nn" }` → enforces `123.45` format.
+Attacker edits config: `"amount": ".+"` → accepts any string; validation silently disappears.
 
-**Mitigation:** Do not construct the `-m` mask string from user-controlled input.
+Common permissive substitutions an attacker might use:
+- `.` or `.+` — accepts any character(s)
+- `n*` — makes digits optional, accepts empty input
+- `[^x]+` — accepts everything except one arbitrary character
+
+**Mitigation:** The mask string must come from the script author's own hardcoded
+logic, not from environment variables, config files, or any source writable by
+untrusted parties.
+
+### The `.` class passes control characters
+
+`MaskClass::Any` (the `.` mask element) accepts every byte, including ASCII
+control characters (Ctrl+A = `0x01`, Ctrl+B = `0x02`, etc.). A script using `.`
+for positional slots may receive control bytes it did not expect:
+
+```bash
+CODE=$(grabchars -m "...." -q "Access code: ")
+# User types Ctrl+A Ctrl+B Ctrl+C Ctrl+D
+# CODE contains \x01\x02\x03\x04 — may cause unexpected behaviour downstream
+```
+
+Use a named class (`U`, `l`, `c`, `n`, `x`) or a bracket expression
+(`[A-Za-z0-9]`) instead of `.` when the output will be used in commands,
+filenames, or logs.
+
+### Path traversal via loosened mask
+
+A mask that is loaded from a config file may be tightened or loosened without
+the script author noticing. If the output is used in a file path, command, or
+query, a more permissive mask opens a traversal or injection vector:
+
+```bash
+# Employee record lookup — mask loaded from config
+ID_FORMAT=$(grep "^mask=" /etc/hr-tool/config | cut -d= -f2)
+EMP_ID=$(grabchars -m "$ID_FORMAT" -q "Employee ID: ")
+cat "/hr/records/$EMP_ID.json"
+```
+
+Intended mask `cc-nnnnn` → only `AB-12345` style input reaches the `cat`.
+Config tampered to `mask=.+` → user types `../../etc/passwd` → path traversal.
+
+The mask looked like a security control. It was not.
+
+---
+
+## grabchars output is user input — validate it downstream
+
+grabchars enforces *format*. It does not enforce *meaning* or *safety*.
+
+A useful analogy from web development: a browser may run JavaScript validation
+before submitting a form, but a well-written server never trusts what arrives in
+a POST request. The server validates independently, because it has no way to know
+whether the request actually came through that form at all.
+
+The same principle applies here. grabchars is the client-side check. Your script
+is the server. Even when a mask is in use, the script that receives grabchars
+output should apply its own sanity checks before acting on the value:
+
+```bash
+EMP_ID=$(grabchars -m "cc-nnnnn" -q "Employee ID: ")
+EXIT_CODE=$?
+
+# 1. Check grabchars itself succeeded
+[[ $EXIT_CODE -eq 7 ]] || { echo "Invalid input." >&2; exit 1; }
+
+# 2. Re-validate format independently — don't trust the mask alone
+[[ "$EMP_ID" =~ ^[A-Z]{2}-[0-9]{5}$ ]] || { echo "Unexpected format." >&2; exit 1; }
+
+# 3. Constrain how the value is used
+cat "/hr/records/${EMP_ID}.json"   # quoted, fixed prefix, fixed suffix
+```
+
+This is especially important when:
+- The output is used in a file path, SQL query, or shell command
+- The mask was loaded from a config file or environment variable
+- The script will run with elevated privileges or access sensitive data
 
 ---
 

@@ -150,6 +150,28 @@ uses arrow style (\fI>option<\fP).
 Bracket and arrow styles are useful on terminals where reverse video
 is unavailable or hard to see.
 .TP 5
+.B \-F<p|f|c>
+Filter style for
+.B select
+and
+.B select\-lr
+modes.
+.B \-Fp
+(default) matches options whose names
+.I start with
+the typed text.
+.B \-Ff
+uses fuzzy (subsequence) matching \(em each typed character must appear
+in the option
+.I in order
+with any characters in between; typing \fBso\fP is equivalent to the
+pattern \fIs.*o\fP.
+.B \-Fc
+matches any option that
+.I contains
+the typed text as a contiguous substring.
+All three styles are case\-insensitive.
+.TP 5
 .B \-L
 Map characters to lower case.
 .TP 5
@@ -274,8 +296,8 @@ Escape
 Cancel; no output; exit code 255
 .RE
 .PP
-Options \fB\-d\fP, \fB\-t\fP, \fB\-q\fP, \fB\-e\fP, \fB\-b\fP, \fB\-f\fP, and \fB\-Z0\fP/\fB\-Z1\fP
-all apply in select mode.
+Options \fB\-d\fP, \fB\-t\fP, \fB\-q\fP, \fB\-e\fP, \fB\-b\fP, \fB\-f\fP, \fB\-Z0\fP/\fB\-Z1\fP,
+and \fB\-F<p|f|c>\fP all apply in select mode.
 .SS "grabchars select\-lr \fIlist\fP [options]"
 Horizontal selection.  All matching options are shown on one line, with
 the current selection highlighted.  Type to filter, Left/Right (or
@@ -294,7 +316,9 @@ Accepts the same options as
 .BR select ,
 plus
 .B \-H<r|b|a>
-for highlight style.
+for highlight style and
+.B \-F<p|f|c>
+for filter style.
 .SH LINE EDITING
 When
 .B \-n
@@ -456,6 +480,12 @@ present a filter\-as\-you\-type vertical menu.
 .B grabchars select\-lr "small,medium,large" \-q "Size: "
 present a horizontal selection menu.
 .TP 5
+.B grabchars select\-lr \-Ff "san francisco,santa maria,san jose,san diego" \-q "City: "
+fuzzy filter: typing \fBso\fP matches all options containing \fIs\fP then \fIo\fP in order.
+.TP 5
+.B grabchars select\-lr \-Fc "new haven,new york,newest first" \-q "City: "
+contains filter: typing \fBew\fP matches every option containing that substring.
+.TP 5
 .B grabchars \-R \-n 3 \-q "Press an arrow key: " | xxd
 capture raw bytes; an arrow key produces three bytes (e.g. 1b 5b 41).
 .PP
@@ -490,10 +520,11 @@ returns 255; timeout without a default returns 254.
 Full documentation is in the source distribution:
 .PP
 .nf
-README.md       \-\- flag reference
-docs/cookbook.md  \-\- 21 runnable examples
-docs/maskInput.md \-\- mask syntax reference
-docs/RAW\-MODE.md  \-\- raw byte mode reference
+README.md            \-\- flag reference
+docs/cookbook.md     \-\- runnable examples covering all features
+docs/maskInput.md    \-\- mask syntax reference
+docs/RAW\-MODE.md    \-\- raw byte mode reference
+docs/FILTER\-FLAG.md \-\- select filter styles (\-Fp/\-Ff/\-Fc)
 .fi
 .SH AUTHOR
 Dan Smith

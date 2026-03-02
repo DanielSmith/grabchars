@@ -112,4 +112,80 @@ rm -f "$TMPFILE"
 echo
 check_output "$actual_out" "green" && check_exit "$actual_exit" "5" && pass || fail "expected 'green' with exit 5"
 
+# ─────────────────────────────────────────────────────────────────────────────
+test_section "Select-LR — Filter Styles (-F)"
+
+CITY_OPTS="san francisco,santa maria,san jose,san luis obispo,san diego"
+NEW_OPTS="new haven,new york,newest first,renew annually"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Fp: prefix filter — 'san j' isolates 'san jose'"
+echo    "  -Fp (default): only options starting with the typed text remain visible."
+echo    "  'san j' matches 'san jose' only — all others disappear from the display."
+instruct "Type 's', 'a', 'n', ' ', 'j', then press Enter"
+show_command "select-lr -Fp \"san francisco,santa maria,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Fp "$CITY_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "san jose" && check_exit "$actual_exit" "2" && pass || fail "expected 'san jose' with exit 2"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Ff: fuzzy — 'sd' isolates 'san diego'"
+echo    "  Fuzzy: 's' then 'd' in order. Only 'san diego' has 'd' after 's'."
+echo    "  All other cities contain no 'd' after the opening 's'."
+instruct "Type 's', 'd', then press Enter"
+show_command "select-lr -Ff \"san francisco,santa maria,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Ff "$CITY_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "san diego" && check_exit "$actual_exit" "4" && pass || fail "expected 'san diego' with exit 4"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Ff: fuzzy — 'so' narrows to 4, navigate to 'san jose'"
+echo    "  's' then 'o': san francisco, san jose, san luis obispo, san diego all match."
+echo    "  Santa maria has no 'o' after its first 's' and disappears."
+echo    "  You should see 4 options highlighted. Navigate Right to 'san jose'."
+instruct "Type 's', 'o' — confirm 4 matches — press Right once to reach 'san jose', Enter"
+show_command "select-lr -Ff \"san francisco,santa maria,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Ff "$CITY_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "san jose" && check_exit "$actual_exit" "2" && pass || fail "expected 'san jose' with exit 2"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Ff: fuzzy — 'nk' isolates 'new york'"
+echo    "  'n' then 'k' in order: only 'new york' has 'k' after 'n'."
+instruct "Type 'n', 'k', then press Enter"
+show_command "select-lr -Ff \"new haven,new york,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Ff "$NEW_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "new york" && check_exit "$actual_exit" "1" && pass || fail "expected 'new york' with exit 1"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Fc: contains — 'ork' isolates 'new york'"
+echo    "  'ork' is a substring of 'new york' only — all others drop out."
+instruct "Type 'o', 'r', 'k', then press Enter"
+show_command "select-lr -Fc \"new haven,new york,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Fc "$NEW_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "new york" && check_exit "$actual_exit" "1" && pass || fail "expected 'new york' with exit 1"
+
+# ─────────────────────────────────────────────────────────────────────────────
+test_start "select-lr -Fc: contains — 'ren' isolates 'renew annually'"
+echo    "  'ren' is only a substring of 'renew annually' in this list."
+instruct "Type 'r', 'e', 'n', then press Enter"
+show_command "select-lr -Fc \"new haven,new york,...\""
+echo
+actual_out=$("$GRABCHARS" select-lr -Fc "$NEW_OPTS" 2>/dev/null)
+actual_exit=$?
+echo
+check_output "$actual_out" "renew annually" && check_exit "$actual_exit" "3" && pass || fail "expected 'renew annually' with exit 3"
+
 print_summary

@@ -412,6 +412,36 @@ grabchars select "yes,no" -d yes -t 5 -q "Confirm (5s): "
 
 Auto-selects `yes` after 5 seconds.
 
+### Filter style (-F)
+
+By default the filter matches options that **start with** the typed text (`-Fp`).
+Two alternatives are available.
+
+**Fuzzy** (`-Ff`) — each typed character must appear in the option in order,
+with any characters allowed in between. Equivalent to inserting `.*` between
+every character of the filter:
+
+```bash
+grabchars select -Ff \
+  "san francisco,santa maria,san jose,san luis obispo,san diego" \
+  -q "City: "
+```
+
+Type `so` — matches san francisco, san jose, san luis obispo, san diego
+(each contains `s` followed by `o` somewhere later). Santa maria has no `o`
+after the `s`, so it drops out.
+
+**Contains** (`-Fc`) — the filter must appear as a contiguous substring
+anywhere inside the option:
+
+```bash
+grabchars select -Fc \
+  "new haven,new york,newest first,renew annually" \
+  -q "City: "
+```
+
+Type `new` — all four match. Type `ork` — only `new york` remains.
+
 ---
 
 ## 14. Select-LR Mode
@@ -497,6 +527,35 @@ grabchars select-lr "a,b,c" -Ha -q "Arrow: "
 
 Bracket and arrow styles are useful on terminals where reverse video is
 hard to see or not supported.
+
+### Filter style (-F)
+
+The `-F` flag controls how the typed text is matched against options.
+The horizontal layout makes the effect easy to see: all remaining matches
+stay visible on one line as you type.
+
+```bash
+# Fuzzy: 'so' matches san francisco, san jose, san luis obispo, san diego
+grabchars select-lr -Ff \
+  "san francisco,santa maria,san jose,san luis obispo,san diego" \
+  -q "City: "
+```
+
+Typing `so` keeps every option that has an `s` followed by an `o` anywhere
+later in the name. `santa maria` has no `o` after the `s` and disappears.
+Typing `sf` isolates `san francisco` in one keystroke.
+
+```bash
+# Contains: 'pp' matches apple, application, appetizer, pineapple
+grabchars select-lr -Fc \
+  "apple,application,appetizer,pineapple,orange" \
+  -q "Item: "
+```
+
+Type `pp` — any option with that substring survives; `orange` disappears.
+
+Prefix (`-Fp`, the default) is unchanged — it requires the option to start
+with what you have typed.
 
 ---
 

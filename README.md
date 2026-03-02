@@ -33,6 +33,7 @@ If your script needs just one character, or something like "read up to 4 digits 
 - **Exit status = character count** — for shell `$?` testing
 - **Vertical select** (`select`) — choose from a list with Up/Down arrows and filter-as-you-type
 - **Horizontal select** (`select-lr`) — inline left/right selection with configurable highlight styles
+- **Select filter styles** (`-F`) — prefix (default), fuzzy/subsequence (`s.*o` style), or contains
 
 ---
 
@@ -86,6 +87,7 @@ grabchars select-lr [opts] --file filename   # horizontal list from file
 | `-E` / `-E1` | Enable line editing (auto-enabled when `-n > 1`) |
 | `-E0` | Disable line editing |
 | `-H r\|b\|a` | Select-lr highlight style: `r` reverse video (default), `b` bracket, `a` arrow |
+| `-F p\|f\|c` | Select filter style: `p` prefix (default), `f` fuzzy/subsequence, `c` contains |
 | `-L` | Map all input to lowercase |
 | `-U` | Map all input to uppercase |
 | `-Z0` | Suppress trailing newline to stderr |
@@ -148,6 +150,12 @@ grabchars select-lr "yes,no,cancel" -q "Action: "
 # Horizontal select with bracket highlight style
 grabchars select-lr "small,medium,large" -Hb -q "Size: "
 
+# Fuzzy filter: 'so' matches san francisco, san jose, san luis obispo, san diego
+grabchars select-lr -Ff "san francisco,santa maria,san jose,san luis obispo,san diego" -q "City: "
+
+# Contains filter: 'ork' matches only 'new york'
+grabchars select-lr -Fc "new haven,new york,new orleans" -q "City: "
+
 # Raw mode: capture arrow key as 3 bytes (ESC [ A), exit code 3
 grabchars -R -n3 -q "Press an arrow key: "
 
@@ -190,8 +198,9 @@ grabchars command vs. 5–10 lines of bash.
 ### vs. gum
 
 **grabchars wins** at keystroke-level control: character filtering, fixed-count
-input, timeout defaults. **gum wins** at rich TUI: fuzzy filtering, styled
-output, spinners, choose-from-list. They're complementary.
+input, timeout defaults, and inline select with prefix/fuzzy/contains filtering
+(`-F`). **gum wins** at rich TUI: styled output, spinners, full-screen choosers.
+They're complementary.
 
 ### vs. dialog / whiptail / fzf
 
@@ -216,6 +225,7 @@ grabchars/
     cookbook.md              # Runnable examples covering all features
     maskInput.md             # Mask syntax reference
     RAW-MODE.md              # Raw mode (-R) reference: byte sequences, flag interactions, impl notes
+    FILTER-FLAG.md           # Select filter styles (-Fp/-Ff/-Fc) reference
     RUST-PORT.md             # Port notes, design decisions, architecture detail
     quantifiers-plan.md      # Design doc for mask quantifiers
     README-1990              # Original 1990 readme from comp.sources.misc

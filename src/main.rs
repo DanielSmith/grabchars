@@ -49,6 +49,18 @@ impl Default for HighlightStyle {
     }
 }
 
+pub enum FilterStyle {
+    Prefix,
+    Fuzzy,
+    Contains,
+}
+
+impl Default for FilterStyle {
+    fn default() -> Self {
+        FilterStyle::Prefix
+    }
+}
+
 #[derive(Default)]
 pub struct Flags {
     pub both: bool,
@@ -64,6 +76,7 @@ pub struct Flags {
     pub upper: bool,
     pub trailing_newline: bool, // -Z: print trailing newline to stderr (default: true)
     pub highlight_style: HighlightStyle,
+    pub filter_style: FilterStyle,
 }
 
 impl Flags {
@@ -82,6 +95,7 @@ impl Flags {
             upper: false,
             trailing_newline: true,
             highlight_style: HighlightStyle::Reverse,
+            filter_style: FilterStyle::Prefix,
         }
     }
 }
@@ -142,6 +156,7 @@ fn print_select_usage() {
         "       -b                              output to both stdout and stderr",
         "       -U/-L                           case mapping on filter input",
         "       -H<r|b|a>                       highlight style: reverse/bracket/arrow (default: r)",
+        "       -F<p|f|c>                       filter style: prefix/fuzzy/contains (default: p)",
         "       -Z0/-Z1                         trailing newline control",
     ];
     for line in &usage {
@@ -304,7 +319,7 @@ fn main() {
                 }
             }
         } else if let Some(ref opts_str) = positional_opts {
-            select_options = opts_str.split(',').map(|s| s.to_string()).collect();
+            select_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
         }
 
         if select_options.is_empty() {
@@ -467,6 +482,20 @@ fn main() {
                         flags.highlight_style = HighlightStyle::Arrow;
                     } else {
                         eprintln!("-H option: unrecognized style '{}' (use r, b, or a)", &rest[..1]);
+                        process::exit(255);
+                    }
+                    break;
+                }
+                'F' => {
+                    // -F or -Fp = prefix, -Ff = fuzzy, -Fc = contains
+                    if rest.is_empty() || rest.starts_with('p') {
+                        flags.filter_style = FilterStyle::Prefix;
+                    } else if rest.starts_with('f') {
+                        flags.filter_style = FilterStyle::Fuzzy;
+                    } else if rest.starts_with('c') {
+                        flags.filter_style = FilterStyle::Contains;
+                    } else {
+                        eprintln!("-F option: unrecognized style '{}' (use p, f, or c)", &rest[..1]);
                         process::exit(255);
                     }
                     break;
