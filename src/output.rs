@@ -17,7 +17,7 @@
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
 
-use crate::{Flags, EXIT_STAT};
+use crate::{Flags, JsonStyle, EXIT_STAT};
 
 // ---------------------------------------------------------------------------
 // ANSI escape sequences
@@ -119,6 +119,77 @@ pub fn output_bytes(buf: &[u8], to_stderr: bool, both: bool) {
         let _ = io::stdout().flush();
         if both {
             let _ = io::stderr().write_all(buf);
+            let _ = io::stderr().flush();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// JSON output (-J)
+// ---------------------------------------------------------------------------
+
+pub struct JsonPayload {
+    pub value: String,
+    pub exit: i32,
+    pub status: &'static str,
+    pub mode: &'static str,
+    pub timed_out: bool,
+    pub default_used: bool,
+    pub index: Option<i32>,
+    pub filter: Option<String>,
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+pub fn emit_json(payload: &JsonPayload, style: JsonStyle, to_stderr: bool, both: bool) {
+    let idx = match payload.index {
+        Some(i) => i.to_string(),
+        None => "null".to_string(),
+    };
+    let flt = match &payload.filter {
+        Some(s) => format!("\"{}\"", json_escape(s)),
+        None => "null".to_string(),
+    };
+    let json = match style {
+        JsonStyle::Compact => format!(
+            "{{\"value\":\"{}\",\"exit\":{},\"status\":\"{}\",\"mode\":\"{}\",\"timed_out\":{},\"default_used\":{},\"index\":{},\"filter\":{}}}",
+            json_escape(&payload.value), payload.exit, payload.status, payload.mode,
+            payload.timed_out, payload.default_used, idx, flt
+        ),
+        JsonStyle::Pretty => format!(
+            "{{\n  \"value\": \"{}\",\n  \"exit\": {},\n  \"status\": \"{}\",\n  \"mode\": \"{}\",\n  \"timed_out\": {},\n  \"default_used\": {},\n  \"index\": {},\n  \"filter\": {}\n}}",
+            json_escape(&payload.value), payload.exit, payload.status, payload.mode,
+            payload.timed_out, payload.default_used, idx, flt
+        ),
+    };
+    if to_stderr {
+        eprint!("{}", json);
+        let _ = io::stderr().flush();
+        if both {
+            print!("{}", json);
+            let _ = io::stdout().flush();
+        }
+    } else {
+        print!("{}", json);
+        let _ = io::stdout().flush();
+        if both {
+            eprint!("{}", json);
             let _ = io::stderr().flush();
         }
     }

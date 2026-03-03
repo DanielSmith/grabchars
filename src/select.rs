@@ -21,6 +21,17 @@ use crate::input::{self, KeyInput};
 use crate::output::{self, CURSOR_LEFT, CURSOR_RIGHT, CLEAR_TO_EOL, REVERSE_ON, REVERSE_OFF};
 use crate::{FilterStyle, Flags, HighlightStyle, TIMED_OUT};
 
+/// Result from a select operation, carrying all info needed for JSON output.
+pub struct SelectResult {
+    pub exit_code: i32,
+    pub value: String,
+    pub status: &'static str,
+    pub timed_out: bool,
+    pub default_used: bool,
+    pub index: Option<i32>,
+    pub filter: String,
+}
+
 // ---------------------------------------------------------------------------
 // Select mode
 // ---------------------------------------------------------------------------
@@ -120,7 +131,7 @@ pub fn run_select_mode(
     default_string: &Option<String>,
     output_to_stderr: bool,
     stdin_fd: i32,
-) -> i32 {
+) -> SelectResult {
     let mut filter: Vec<u8> = Vec::new();
     let mut cursor_pos: usize = 0;
     let mut matches = compute_matches(options, "", &flags.filter_style);
@@ -143,6 +154,8 @@ pub fn run_select_mode(
         render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
     }
 
+    let filter_str_fn = |f: &[u8]| String::from_utf8_lossy(f).into_owned();
+
     loop {
         // Check timeout
         if TIMED_OUT.load(Ordering::Relaxed) {
@@ -153,16 +166,18 @@ pub fn run_select_mode(
                     if opt.to_lowercase() == ds_lower {
                         if !flags.silent {
                             clear_select_line(&mut prev_width);
-                            output::output_str(opt, output_to_stderr, flags.both);
+                            if flags.json.is_none() {
+                                output::output_str(opt, output_to_stderr, flags.both);
+                            }
                         }
-                        return i as i32;
+                        return SelectResult { exit_code: i as i32, value: opt.clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                     }
                 }
             }
             if !flags.silent {
                 clear_select_line(&mut prev_width);
             }
-            return -2;
+            return SelectResult { exit_code: 254, value: String::new(), status: "timeout", timed_out: true, default_used: false, index: None, filter: filter_str_fn(&filter) };
         }
 
         let key = match input::read_key(stdin_fd) {
@@ -352,17 +367,24 @@ pub fn run_select_mode(
                     let selected = &options[original_idx];
                     if !flags.silent {
                         clear_select_line(&mut prev_width);
-                        output::output_str(selected, output_to_stderr, flags.both);
+                        if flags.json.is_none() {
+                            output::output_str(selected, output_to_stderr, flags.both);
+                        }
                     }
-                    return original_idx as i32;
+                    return SelectResult { exit_code: original_idx as i32, value: selected.clone(), status: "ok", timed_out: false, default_used: false, index: Some(original_idx as i32), filter: filter_str_fn(&filter) };
                 }
                 // If no matches, Enter does nothing
             }
             KeyInput::Escape => {
+                let esc_exit = match flags.esc_code {
+                    Some(0) => { continue; } // no-op
+                    Some(n) => n,
+                    None => 255,
+                };
                 if !flags.silent {
                     clear_select_line(&mut prev_width);
                 }
-                return -1;
+                return SelectResult { exit_code: esc_exit, value: String::new(), status: "cancelled", timed_out: false, default_used: false, index: None, filter: filter_str_fn(&filter) };
             }
             KeyInput::Unknown => {}
         }
@@ -372,7 +394,7 @@ pub fn run_select_mode(
     if !flags.silent {
         clear_select_line(&mut prev_width);
     }
-    -1
+    SelectResult { exit_code: 255, value: String::new(), status: "cancelled", timed_out: false, default_used: false, index: None, filter: filter_str_fn(&filter) }
 }
 
 // ---------------------------------------------------------------------------
@@ -477,7 +499,7 @@ pub fn run_select_lr_mode(
     default_string: &Option<String>,
     output_to_stderr: bool,
     stdin_fd: i32,
-) -> i32 {
+) -> SelectResult {
     let mut filter: Vec<u8> = Vec::new();
     let mut cursor_pos: usize = 0;
     let mut matches = compute_matches(options, "", &flags.filter_style);
@@ -503,6 +525,8 @@ pub fn run_select_lr_mode(
         );
     }
 
+    let filter_str_fn = |f: &[u8]| String::from_utf8_lossy(f).into_owned();
+
     loop {
         // Check timeout
         if TIMED_OUT.load(Ordering::Relaxed) {
@@ -512,16 +536,18 @@ pub fn run_select_lr_mode(
                     if opt.to_lowercase() == ds_lower {
                         if !flags.silent {
                             clear_select_line(&mut prev_width);
-                            output::output_str(opt, output_to_stderr, flags.both);
+                            if flags.json.is_none() {
+                                output::output_str(opt, output_to_stderr, flags.both);
+                            }
                         }
-                        return i as i32;
+                        return SelectResult { exit_code: i as i32, value: opt.clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                     }
                 }
             }
             if !flags.silent {
                 clear_select_line(&mut prev_width);
             }
-            return -2;
+            return SelectResult { exit_code: 254, value: String::new(), status: "timeout", timed_out: true, default_used: false, index: None, filter: filter_str_fn(&filter) };
         }
 
         let key = match input::read_key(stdin_fd) {
@@ -678,16 +704,23 @@ pub fn run_select_lr_mode(
                     let selected = &options[original_idx];
                     if !flags.silent {
                         clear_select_line(&mut prev_width);
-                        output::output_str(selected, output_to_stderr, flags.both);
+                        if flags.json.is_none() {
+                            output::output_str(selected, output_to_stderr, flags.both);
+                        }
                     }
-                    return original_idx as i32;
+                    return SelectResult { exit_code: original_idx as i32, value: selected.clone(), status: "ok", timed_out: false, default_used: false, index: Some(original_idx as i32), filter: filter_str_fn(&filter) };
                 }
             }
             KeyInput::Escape => {
+                let esc_exit = match flags.esc_code {
+                    Some(0) => { continue; } // no-op
+                    Some(n) => n,
+                    None => 255,
+                };
                 if !flags.silent {
                     clear_select_line(&mut prev_width);
                 }
-                return -1;
+                return SelectResult { exit_code: esc_exit, value: String::new(), status: "cancelled", timed_out: false, default_used: false, index: None, filter: filter_str_fn(&filter) };
             }
             KeyInput::Unknown => {}
         }
@@ -697,5 +730,5 @@ pub fn run_select_lr_mode(
     if !flags.silent {
         clear_select_line(&mut prev_width);
     }
-    -1
+    SelectResult { exit_code: 255, value: String::new(), status: "cancelled", timed_out: false, default_used: false, index: None, filter: filter_str_fn(&filter) }
 }

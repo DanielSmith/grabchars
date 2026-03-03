@@ -1,6 +1,140 @@
-# grabchars 2.0 — Release Notes
+# grabchars — Release Notes
 
-## The short version
+---
+
+## 2.1
+
+### JSON output (`-J`) — new
+
+`-J` replaces normal stdout output with a single JSON object containing the
+captured value, exit code, status, and contextual metadata. Works in all modes.
+
+| Flag | Behavior |
+|------|----------|
+| `-J` or `-J1` | Compact JSON on stdout (single line) |
+| `-Jp` | Pretty-printed JSON (indented) |
+| `-J0` | Explicit off — normal behavior (default) |
+
+Output fields (always present):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `value` | string | The captured text |
+| `exit` | integer | Exit code (identical to `$?`) |
+| `status` | string | `"ok"`, `"default"`, `"timeout"`, or `"cancelled"` |
+| `mode` | string | `"normal"`, `"mask"`, `"select"`, `"select-lr"`, or `"raw"` |
+| `timed_out` | boolean | Whether the timeout fired |
+| `default_used` | boolean | Whether the default value was returned |
+| `index` | int\|null | 0-based index of selected option (select modes only) |
+| `filter` | string\|null | Filter text typed before confirming (select modes only) |
+
+```bash
+result=$(grabchars -J select "yes,no,cancel" -B100 -q "Action: " 2>/dev/tty)
+status=$(echo "$result" | jq -r '.status')
+value=$(echo "$result"  | jq -r '.value')
+
+case "$status" in
+    ok)        echo "Selected: $value" ;;
+    default)   echo "Defaulted to: $value" ;;
+    timeout)   echo "Timed out" ;;
+    cancelled) echo "Cancelled via ESC" ;;
+esac
+```
+
+In raw mode (`-R`), the `value` field is hex-encoded (space-separated bytes)
+since raw captures may not be valid UTF-8.
+
+No external JSON crate — the emitter is hand-written to keep zero dependencies.
+See `docs/JSON-OUTPUT.md` for the full specification and examples.
+
+### Filter styles for select modes (`-F`) — new
+
+Both `select` and `select-lr` now support three filter styles via `-F`:
+
+| Flag | Style | Behavior |
+|------|-------|----------|
+| `-Fp` | Prefix | Only options that start with the typed text match (default) |
+| `-Ff` | Fuzzy | Typed characters must appear in order, with anything between (subsequence) |
+| `-Fc` | Contains | Typed text must appear anywhere as a contiguous substring |
+
+```bash
+grabchars select-lr -Ff "san francisco,santa maria,san jose,san luis obispo"
+# Type 'sl' → only 'san luis obispo' has 'l' after 's' → immediate match
+
+grabchars select -Fc "new haven,new york,newest first,renew annually"
+# Type 'ork' → only 'new york' contains that substring
+```
+
+The default (`-Fp`) preserves the 2.0 behavior exactly — no change for existing scripts.
+
+### ESC bail flag (`-B<n>`) — new
+
+Controls what happens when the user presses Escape.
+
+| Flag | Behavior |
+|------|----------|
+| *(none)* | Current behavior — ESC exits 255 in mask/select, no-op in normal mode |
+| `-B0` | ESC is a no-op in all modes (kiosk/embedded use) |
+| `-B1`–`-B253` | ESC exits with code *n* |
+| `-B255` | ESC exits 255 explicitly (same as default for mask/select) |
+
+`-B254` is disallowed — 254 is already the timeout-with-no-default exit code.
+
+This lets scripts distinguish "user pressed ESC" from "bad invocation" for the
+first time:
+
+```bash
+CHOICE=$(grabchars select "yes,no,cancel" -B200 -q "Continue? ")
+case $? in
+    0)   echo "Selected: yes" ;;
+    1)   echo "Selected: no" ;;
+    2)   echo "Selected: cancel" ;;
+    200) echo "User pressed ESC" ;;
+    255) echo "Error invoking grabchars" ;;
+esac
+```
+
+**Note:** `-B0` in select modes disables the only in-band cancel key. The user
+must Ctrl+C to exit, which restores the terminal less cleanly. Document this
+in scripts that use it.
+
+### Bug fix: whitespace in comma-separated option lists
+
+Options passed as a single comma-separated string were not trimmed before
+matching. An option like `"san francisco, santa maria"` (note the space after
+the comma) produced an item `" santa maria"` with a leading space — which
+never matched any filter input. Options are now trimmed consistently.
+
+### Security: async-signal-safe terminal restore
+
+The saved terminal state (used to restore the terminal from signal handlers)
+was previously stored behind a `Mutex`. A `Mutex` is not async-signal-safe
+under POSIX: if a signal arrived during the brief window when `init_term()`
+held the lock, the signal handler's attempt to acquire the same lock would
+deadlock.
+
+The storage is now a `MaybeUninit<termios>` written exactly once before
+signals are registered, guarded by an `AtomicBool` flag. No lock is taken
+in the signal handler path.
+
+### Robustness: clear error when stdin is not a terminal
+
+Invoking grabchars with stdin redirected from a pipe or file previously
+produced no output and exited 0 — silently broken. grabchars now detects
+this at startup and exits 255 with a diagnostic:
+
+```
+grabchars: stdin is not a terminal
+```
+
+This does not affect normal use. PTYs (SSH, tmux, screen, Docker) pass the
+check identically to physical terminals.
+
+---
+
+## 2.0 — The rewrite
+
+### The short version
 
 grabchars was written in 1988 and posted to `comp.sources.misc`. It was
 never properly finished. This is the finished version.
@@ -10,7 +144,7 @@ O'Reilly book "Unix Power Tools".
 
 ---
 
-## What the 1988 version was
+### What the 1988 version was
 
 The original C code (~665 lines across four files) read raw keystrokes from
 the terminal for use in shell scripts. The core idea was right: shell scripts
@@ -38,9 +172,9 @@ But the execution had real problems:
 
 ---
 
-## What 2.0 fixes and what it adds
+### What 2.0 fixes and what it adds
 
-### Portability — fixed
+#### Portability — fixed
 
 The terminal layer is rewritten on POSIX `termios`, which works correctly
 on Linux, macOS, and WSL. There is one code path, not two. The original's
@@ -53,14 +187,14 @@ after SIGALRM fires — the timeout never triggers. This was a latent bug
 in the original that would have broken `-t` on macOS. It is fixed from
 the start in 2.0.
 
-### CLI compatibility — preserved
+#### CLI compatibility — preserved
 
 Every flag the 1988 version had works identically in 2.0. Shell scripts
 written for the original run unchanged: `-c`, `-C`, `-d`, `-e`, `-b`,
 `-f`, `-n`, `-p`, `-q`, `-r`, `-s`, `-t`, `-U`, `-L`. The exit-code
 convention (exit status = number of characters read) is unchanged.
 
-### Line editing — done properly
+#### Line editing — done properly
 
 Multi-character input (`-n > 1`) now has full line editing, auto-enabled
 by default. Left/Right arrow keys move the cursor within the buffer.
@@ -82,7 +216,7 @@ Kill commands track the character budget correctly — with `-n 20` you can
 type 20 characters, kill 10 with Ctrl-K, and type 10 more. Editing can be
 forced on with `-E` or off with `-E0`.
 
-### Mask mode (`-m`) — new
+#### Mask mode (`-m`) — new
 
 Positional input validation with auto-inserted literals. The mask string
 defines a pattern; grabchars enforces it character by character and inserts
@@ -99,7 +233,7 @@ Character classes: `U` uppercase, `l` lowercase, `c` any letter, `n` digit,
 `x` hex, `p` punctuation, `.` any character, `[...]` custom class.
 Quantifiers (`*`, `+`, `?`) allow variable-length fields.
 
-### Selection menus — new
+#### Selection menus — new
 
 Two interactive selection modes for choosing from a list of options.
 
@@ -114,7 +248,7 @@ Both modes support defaults (`-d`), timeouts (`-t`), and output routing.
 Exit code is the zero-based position of the selected option in the original
 list.
 
-### Raw mode (`-R`) — new
+#### Raw mode (`-R`) — new
 
 Bypasses the escape sequence parser entirely. Every byte arriving from the
 terminal is captured as-is — an arrow key is three bytes (`1b 5b 41`), not
@@ -132,7 +266,7 @@ grabchars -R -n3 -q "Press arrow key: "
 grabchars -R -n6 -q "Press a key: " | xxd
 ```
 
-### Trailing newline control (`-Z`) — new
+#### Trailing newline control (`-Z`) — new
 
 After output completes, a newline is written to stderr so the shell prompt
 appears on a new line. This is on by default. `-Z0` suppresses it for cases
@@ -140,7 +274,7 @@ where grabchars output is embedded in a larger line of terminal output.
 
 ---
 
-## What grabchars is not
+### What grabchars is not
 
 It is a script primitive, not an interactive tool. It belongs in the same
 category as `tput`, `stty`, and `printf` — things shell scripts call, not
@@ -154,7 +288,7 @@ the cookbook.
 
 ---
 
-## Compatibility
+### Compatibility
 
 - **OS:** Linux, macOS, WSL. Any POSIX-compliant system with a real TTY.
 - **Rust:** 1.85 or later (edition 2024).

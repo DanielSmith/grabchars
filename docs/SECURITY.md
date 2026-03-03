@@ -51,12 +51,15 @@ the struct. Return value is checked before use. Safe.
 
 ### `term.rs` — `init_term()`
 ```rust
+libc::isatty(0);
 libc::tcgetattr(0, &mut orig);
 libc::tcsetattr(0, libc::TCSAFLUSH, &raw);
 ```
-Standard POSIX termios calls on fd 0 (stdin). If fd 0 is not a TTY,
-`tcgetattr` returns -1 (error silently ignored) but causes no undefined
-behaviour. Safe.
+`isatty(0)` is called first; if stdin is not a terminal (pipe, redirect, CI,
+SSH without PTY) the function prints a diagnostic and exits 255 before
+touching the terminal state. `tcgetattr` return value is then checked; on
+failure the same clean exit occurs. PTYs (SSH with `-t`, tmux, screen,
+Docker `-it`) pass both checks identically to physical terminals. Safe.
 
 ### `main.rs` — `setup_alarm()`
 ```rust
@@ -73,33 +76,14 @@ on all POSIX systems (both macOS and Linux default to `SA_RESTART` with
 libc::_exit(EXIT_STAT.load(Ordering::Relaxed));
 ```
 `_exit` is async-signal-safe. The atomic load is safe in signal context.
-However, this handler calls `term::restore_saved()` before `_exit` — see
-defect #1 below.
+`restore_saved()` is also async-signal-safe: it reads from a `MaybeUninit`
+via a raw pointer guarded by an `AtomicBool`, with no mutex or allocation.
 
 ---
 
 ## Known defects
 
-### Defect 1: Mutex in signal handler (`term.rs:66`)
-
-`signal_handler()` calls `restore_saved()`, which calls `SAVED_TERMIOS.lock()`.
-A `Mutex` is **not async-signal-safe** under POSIX. If a signal arrives while
-the main thread holds the lock (a window of roughly 10–100 nanoseconds during
-`init_term()`), the handler will block waiting for the lock, which is already
-held by the interrupted thread — a deadlock.
-
-**Practical risk:** Very low. The lock is held for a handful of instructions
-during startup only. No user-visible failure has been observed. The original C
-used a plain global `struct termios`, which has no locking — the Mutex is a
-safety improvement but introduces this specific edge case.
-
-**Correct fix:** Replace the Mutex with a raw static and an `AtomicBool` guard,
-or use a signal-safe copy mechanism (atomic store of each field, or write only
-once before signals are enabled). Tracked for a future release.
-
----
-
-### Defect 2: Possible integer truncation on very long `-d` string (`output.rs:70`)
+### Defect 1: Possible integer truncation on very long `-d` string (`output.rs:70`)
 
 ```rust
 EXIT_STAT.store(default_string.len() as i32, Ordering::Relaxed);

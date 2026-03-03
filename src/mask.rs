@@ -20,7 +20,7 @@ use std::sync::atomic::Ordering;
 
 use crate::input::{self, KeyInput};
 use crate::output::{self, CURSOR_LEFT, CLEAR_TO_EOL};
-use crate::{Flags, TIMED_OUT, EXIT_STAT};
+use crate::{Flags, TIMED_OUT};
 
 pub enum MaskClass {
     Upper,       // U - uppercase letter
@@ -232,6 +232,14 @@ fn mask_auto_insert_literals(
     count
 }
 
+pub struct MaskResult {
+    pub exit_code: i32,
+    pub value: String,
+    pub status: &'static str,
+    pub timed_out: bool,
+    pub default_used: bool,
+}
+
 pub fn run_mask_mode(
     mask: &[MaskElement],
     flags: &Flags,
@@ -240,7 +248,7 @@ pub fn run_mask_mode(
     exclude_pattern: &Option<regex::Regex>,
     output_to_stderr: bool,
     stdin_fd: i32,
-) -> i32 {
+) -> MaskResult {
     let mut buffer: Vec<u8> = Vec::new();
     let mut mask_map: Vec<usize> = Vec::new();
     let has_unbounded = mask_has_unbounded(mask);
@@ -279,16 +287,19 @@ pub fn run_mask_mode(
         if TIMED_OUT.load(Ordering::Relaxed) {
             if flags.dflt && buffer.is_empty() {
                 if let Some(ds) = default_string {
-                    output::handle_default(ds, flags, output_to_stderr);
-                    return EXIT_STAT.load(Ordering::Relaxed);
+                    if flags.json.is_none() {
+                        output::handle_default(ds, flags, output_to_stderr);
+                    }
+                    let ec = ds.len() as i32;
+                    return MaskResult { exit_code: ec, value: ds.clone(), status: "default", timed_out: true, default_used: true };
                 }
             }
             // Output partial buffer
-            if !buffer.is_empty() {
+            if !buffer.is_empty() && flags.json.is_none() {
                 let s = String::from_utf8_lossy(&buffer);
                 output::output_str(&s, output_to_stderr, flags.both);
             }
-            return -2;
+            return MaskResult { exit_code: 254, value: String::new(), status: "timeout", timed_out: true, default_used: false };
         }
 
         let key = match input::read_key(stdin_fd) {
@@ -462,8 +473,11 @@ pub fn run_mask_mode(
             KeyInput::Enter => {
                 if flags.dflt && buffer.is_empty() {
                     if let Some(ds) = default_string {
-                        output::handle_default(ds, flags, output_to_stderr);
-                        return EXIT_STAT.load(Ordering::Relaxed);
+                        if flags.json.is_none() {
+                            output::handle_default(ds, flags, output_to_stderr);
+                        }
+                        let ec = ds.len() as i32;
+                        return MaskResult { exit_code: ec, value: ds.clone(), status: "default", timed_out: false, default_used: true };
                     }
                 }
                 if flags.ret_key {
@@ -482,14 +496,19 @@ pub fn run_mask_mode(
                 }
             }
             KeyInput::Escape => {
-                // Erase displayed buffer from stderr
+                let esc_exit = match flags.esc_code {
+                    Some(0) => { continue; } // no-op
+                    Some(n) => n,
+                    None => 255,
+                };
+                // Erase displayed buffer
                 if !flags.silent && !buffer.is_empty() {
                     let mut stderr = io::stderr();
                     output::cursor_left_n(&mut stderr, buffer.len());
                     let _ = stderr.write_all(CLEAR_TO_EOL);
                     let _ = stderr.flush();
                 }
-                return -1;
+                return MaskResult { exit_code: esc_exit, value: String::new(), status: "cancelled", timed_out: false, default_used: false };
             }
             // All other keys ignored in mask mode
             _ => {}
@@ -497,10 +516,11 @@ pub fn run_mask_mode(
     }
 
     // Output the buffer
-    if !buffer.is_empty() {
-        let s = String::from_utf8_lossy(&buffer);
-        output::output_str(&s, output_to_stderr, flags.both);
+    let val = String::from_utf8_lossy(&buffer).into_owned();
+    let ec = buffer.len() as i32;
+    if flags.json.is_none() && !val.is_empty() {
+        output::output_str(&val, output_to_stderr, flags.both);
     }
 
-    buffer.len() as i32
+    MaskResult { exit_code: ec, value: val, status: "ok", timed_out: false, default_used: false }
 }

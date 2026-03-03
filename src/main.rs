@@ -77,6 +77,14 @@ pub struct Flags {
     pub trailing_newline: bool, // -Z: print trailing newline to stderr (default: true)
     pub highlight_style: HighlightStyle,
     pub filter_style: FilterStyle,
+    pub esc_code: Option<i32>, // -B<n>: None = current behavior, Some(0) = no-op, Some(n) = exit n
+    pub json: Option<JsonStyle>, // -J: None = off, Some(Compact), Some(Pretty)
+}
+
+#[derive(Clone, Copy)]
+pub enum JsonStyle {
+    Compact,
+    Pretty,
 }
 
 impl Flags {
@@ -96,6 +104,8 @@ impl Flags {
             trailing_newline: true,
             highlight_style: HighlightStyle::Reverse,
             filter_style: FilterStyle::Prefix,
+            esc_code: None,
+            json: None,
         }
     }
 }
@@ -114,6 +124,7 @@ fn print_usage() {
         "       -e                   output to stderr instead of stdout",
         "       -f                   flush any previous input before reading",
         "       -h                   help screen",
+        "       -J/-J1/-Jp/-J0        JSON output: compact/pretty/off (default: off)",
         "       -m<mask>             mask for positional input (U=upper l=lower c=alpha n=digit x=hex p=punct .=any)",
         "       -n<number>           number of characters to read",
         "       -p<prompt>           prompt to help user",
@@ -122,6 +133,7 @@ fn print_usage() {
         "       -R                   raw mode: capture bytes as-is (no escape parsing)",
         "       -s                   silent, just return status",
         "       -t<seconds>          timeout after <seconds>",
+        "       -B<n>                ESC exit code: 0=no-op, 1-253=exit n, 255=exit 255 (default: no-op in normal, 255 in mask/select)",
         "       -E/-E1/-E0            enable/disable line editing (default: on when -n > 1)",
         "       -U/-L                upper/lower case mapping on input",
         "       -Z0/-Z1              trailing newline to stderr (default: on)",
@@ -157,6 +169,8 @@ fn print_select_usage() {
         "       -U/-L                           case mapping on filter input",
         "       -H<r|b|a>                       highlight style: reverse/bracket/arrow (default: r)",
         "       -F<p|f|c>                       filter style: prefix/fuzzy/contains (default: p)",
+        "       -J/-J1/-Jp/-J0                   JSON output: compact/pretty/off",
+        "       -B<n>                           ESC exit code: 0=no-op, 1-253/255=exit n",
         "       -Z0/-Z1                         trailing newline control",
     ];
     for line in &usage {
@@ -231,6 +245,52 @@ fn setup_alarm(secs: u32) {
 
 extern "C" fn alarm_handler(_sig: libc::c_int) {
     TIMED_OUT.store(true, Ordering::Relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// JSON helpers
+// ---------------------------------------------------------------------------
+
+/// Hex-encode raw bytes for JSON value field in raw mode.
+fn raw_hex_value(buf: &[u8]) -> String {
+    buf.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+// Emits JSON and exits — used when -J is active
+
+fn emit_json_and_exit(
+    flags: &Flags,
+    value: &str,
+    exit_code: i32,
+    status: &'static str,
+    mode: &'static str,
+    timed_out: bool,
+    default_used: bool,
+    index: Option<i32>,
+    filter: Option<String>,
+    output_to_stderr: bool,
+    orig_termios: &libc::termios,
+) -> ! {
+    if let Some(style) = flags.json {
+        let payload = output::JsonPayload {
+            value: value.to_string(),
+            exit: exit_code,
+            status,
+            mode,
+            timed_out,
+            default_used,
+            index,
+            filter,
+        };
+        output::emit_json(&payload, style, output_to_stderr, flags.both);
+    }
+    output::trailing_newline_if(flags);
+    EXIT_STAT.store(exit_code, Ordering::Relaxed);
+    term::restore_term(orig_termios);
+    process::exit(exit_code);
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +560,37 @@ fn main() {
                     }
                     break;
                 }
+                'B' => {
+                    let val = parser.get_optarg(&rest).unwrap_or_else(|| {
+                        eprintln!("-B option: need a number (0-253 or 255)");
+                        process::exit(255);
+                    });
+                    let n = val.parse::<i32>().unwrap_or_else(|_| {
+                        eprintln!("-B option: invalid number '{}'", val);
+                        process::exit(255);
+                    });
+                    if !(0..=255).contains(&n) {
+                        eprintln!("-B option: exit code must be 0-255");
+                        process::exit(255);
+                    }
+                    if n == 254 {
+                        eprintln!("-B254 conflicts with the timeout exit code (254); use a different value");
+                        process::exit(255);
+                    }
+                    flags.esc_code = Some(n);
+                    break;
+                }
+                'J' => {
+                    if rest.starts_with('0') {
+                        flags.json = None;
+                    } else if rest.starts_with('p') {
+                        flags.json = Some(JsonStyle::Pretty);
+                    } else {
+                        // -J or -J1 = compact
+                        flags.json = Some(JsonStyle::Compact);
+                    }
+                    break;
+                }
                 'Z' => {
                     // -Z0 = no trailing newline, -Z1 = trailing newline
                     // -Z alone is the same as -Z1
@@ -542,7 +633,8 @@ fn main() {
     // Select mode: branch to dedicated handler
     if select_mode {
         let stdin_fd = io::stdin().as_raw_fd();
-        let exit_code = if select_lr_mode {
+        let mode_str = if select_lr_mode { "select-lr" } else { "select" };
+        let result = if select_lr_mode {
             select::run_select_lr_mode(
                 &select_options,
                 &flags,
@@ -559,6 +651,20 @@ fn main() {
                 stdin_fd,
             )
         };
+        let exit_code = result.exit_code;
+        if let Some(style) = flags.json {
+            let payload = output::JsonPayload {
+                value: result.value,
+                exit: exit_code,
+                status: result.status,
+                mode: mode_str,
+                timed_out: result.timed_out,
+                default_used: result.default_used,
+                index: result.index,
+                filter: Some(result.filter),
+            };
+            output::emit_json(&payload, style, output_to_stderr, flags.both);
+        }
         output::trailing_newline_if(&flags);
         term::restore_term(&orig_termios);
         process::exit(exit_code);
@@ -573,10 +679,24 @@ fn main() {
             process::exit(255);
         }
         let stdin_fd = io::stdin().as_raw_fd();
-        let exit_code = mask::run_mask_mode(
+        let result = mask::run_mask_mode(
             &parsed_mask, &flags, &default_string,
             &valid_pattern, &exclude_pattern, output_to_stderr, stdin_fd,
         );
+        let exit_code = result.exit_code;
+        if let Some(style) = flags.json {
+            let payload = output::JsonPayload {
+                value: result.value,
+                exit: exit_code,
+                status: result.status,
+                mode: "mask",
+                timed_out: result.timed_out,
+                default_used: result.default_used,
+                index: None,
+                filter: None,
+            };
+            output::emit_json(&payload, style, output_to_stderr, flags.both);
+        }
         output::trailing_newline_if(&flags);
         term::restore_term(&orig_termios);
         process::exit(exit_code);
@@ -595,11 +715,19 @@ fn main() {
             if TIMED_OUT.load(Ordering::Relaxed) {
                 if flags.dflt && num_read == 0 {
                     if let Some(ref ds) = default_string {
+                        if flags.json.is_some() {
+                            let ec = ds.len() as i32;
+                            emit_json_and_exit(&flags, ds, ec, "default", "raw", true, true, None, None, output_to_stderr, &orig_termios);
+                        }
                         output::handle_default(ds, &flags, output_to_stderr);
                         output::trailing_newline_if(&flags);
                         term::restore_term(&orig_termios);
                         process::exit(EXIT_STAT.load(Ordering::Relaxed));
                     }
+                }
+                if flags.json.is_some() {
+                    let val = raw_hex_value(&buffer);
+                    emit_json_and_exit(&flags, &val, 254, "timeout", "raw", true, false, None, None, output_to_stderr, &orig_termios);
                 }
                 if !flags.silent && !buffer.is_empty() {
                     output::output_bytes(&buffer, output_to_stderr, flags.both);
@@ -618,6 +746,10 @@ fn main() {
             if (b == 0x0A || b == 0x0D) && flags.ret_key {
                 if flags.dflt && num_read == 0 {
                     if let Some(ref ds) = default_string {
+                        if flags.json.is_some() {
+                            let ec = ds.len() as i32;
+                            emit_json_and_exit(&flags, ds, ec, "default", "raw", false, true, None, None, output_to_stderr, &orig_termios);
+                        }
                         output::handle_default(ds, &flags, output_to_stderr);
                         output::trailing_newline_if(&flags);
                         term::restore_term(&orig_termios);
@@ -630,13 +762,18 @@ fn main() {
             num_read += 1;
         }
 
+        let ec = num_read as i32;
+        if flags.json.is_some() {
+            let val = raw_hex_value(&buffer);
+            emit_json_and_exit(&flags, &val, ec, "ok", "raw", false, false, None, None, output_to_stderr, &orig_termios);
+        }
         if !flags.silent && !buffer.is_empty() {
             output::output_bytes(&buffer, output_to_stderr, flags.both);
         }
         output::trailing_newline_if(&flags);
-        EXIT_STAT.store(num_read as i32, Ordering::Relaxed);
+        EXIT_STAT.store(ec, Ordering::Relaxed);
         term::restore_term(&orig_termios);
-        process::exit(num_read as i32);
+        process::exit(ec);
     }
 
     // Resolve erase mode: if unset, default to on when how_many > 1
@@ -655,11 +792,18 @@ fn main() {
         if TIMED_OUT.load(Ordering::Relaxed) {
             if flags.dflt && num_read == 0 {
                 if let Some(ref ds) = default_string {
+                    if flags.json.is_some() {
+                        let ec = ds.len() as i32;
+                        emit_json_and_exit(&flags, ds, ec, "default", "normal", true, true, None, None, output_to_stderr, &orig_termios);
+                    }
                     output::handle_default(ds, &flags, output_to_stderr);
                     output::trailing_newline_if(&flags);
                     term::restore_term(&orig_termios);
                     process::exit(EXIT_STAT.load(Ordering::Relaxed));
                 }
+            }
+            if flags.json.is_some() {
+                emit_json_and_exit(&flags, "", 254, "timeout", "normal", true, false, None, None, output_to_stderr, &orig_termios);
             }
             output::trailing_newline_if(&flags);
             EXIT_STAT.store(-2, Ordering::Relaxed);
@@ -813,6 +957,10 @@ fn main() {
                     // Default on Enter as first input
                     if flags.dflt && num_read == 0 {
                         if let Some(ref ds) = default_string {
+                            if flags.json.is_some() {
+                                let ec = ds.len() as i32;
+                                emit_json_and_exit(&flags, ds, ec, "default", "normal", false, true, None, None, output_to_stderr, &orig_termios);
+                            }
                             output::handle_default(ds, &flags, output_to_stderr);
                             output::trailing_newline_if(&flags);
                             term::restore_term(&orig_termios);
@@ -845,8 +993,21 @@ fn main() {
                         output::redraw_input(&buffer, cursor_pos, cursor_pos - 1);
                     }
                 }
-                KeyInput::Up | KeyInput::Down | KeyInput::Tab | KeyInput::Escape
-                    | KeyInput::Unknown => {}
+                KeyInput::Escape => {
+                    if let Some(n) = flags.esc_code {
+                        if n > 0 {
+                            if flags.json.is_some() {
+                                emit_json_and_exit(&flags, "", n, "cancelled", "normal", false, false, None, None, output_to_stderr, &orig_termios);
+                            }
+                            output::trailing_newline_if(&flags);
+                            term::restore_term(&orig_termios);
+                            process::exit(n);
+                        }
+                        // Some(0) = no-op; fall through
+                    }
+                    // None = original behavior: no-op in normal mode
+                }
+                KeyInput::Up | KeyInput::Down | KeyInput::Tab | KeyInput::Unknown => {}
             }
         } else {
             // Non-edit mode: Char, Backspace (raw), and Enter
@@ -856,6 +1017,10 @@ fn main() {
                     // Default on Enter as first char
                     if ch == '\n' && flags.dflt && num_read == 0 {
                         if let Some(ref ds) = default_string {
+                            if flags.json.is_some() {
+                                let ec = ds.len() as i32;
+                                emit_json_and_exit(&flags, ds, ec, "default", "normal", false, true, None, None, output_to_stderr, &orig_termios);
+                            }
                             output::handle_default(ds, &flags, output_to_stderr);
                             output::trailing_newline_if(&flags);
                             term::restore_term(&orig_termios);
@@ -901,6 +1066,10 @@ fn main() {
                 KeyInput::Enter => {
                     if flags.dflt && num_read == 0 {
                         if let Some(ref ds) = default_string {
+                            if flags.json.is_some() {
+                                let ec = ds.len() as i32;
+                                emit_json_and_exit(&flags, ds, ec, "default", "normal", false, true, None, None, output_to_stderr, &orig_termios);
+                            }
                             output::handle_default(ds, &flags, output_to_stderr);
                             output::trailing_newline_if(&flags);
                             term::restore_term(&orig_termios);
@@ -911,9 +1080,29 @@ fn main() {
                         break 'outer;
                     }
                 }
+                KeyInput::Escape => {
+                    if let Some(n) = flags.esc_code {
+                        if n > 0 {
+                            if flags.json.is_some() {
+                                emit_json_and_exit(&flags, "", n, "cancelled", "normal", false, false, None, None, output_to_stderr, &orig_termios);
+                            }
+                            output::trailing_newline_if(&flags);
+                            term::restore_term(&orig_termios);
+                            process::exit(n);
+                        }
+                        // Some(0) = no-op; fall through
+                    }
+                    // None = original behavior: no-op in normal mode
+                }
                 _ => {} // Arrow keys etc. silently ignored
             }
         }
+    }
+
+    let ec = num_read as i32;
+    if flags.json.is_some() {
+        let val = String::from_utf8_lossy(&buffer).into_owned();
+        emit_json_and_exit(&flags, &val, ec, "ok", "normal", false, false, None, None, output_to_stderr, &orig_termios);
     }
 
     // In erase mode, write the final buffer to primary output
@@ -923,7 +1112,7 @@ fn main() {
     }
 
     output::trailing_newline_if(&flags);
-    EXIT_STAT.store(num_read as i32, Ordering::Relaxed);
+    EXIT_STAT.store(ec, Ordering::Relaxed);
     term::restore_term(&orig_termios);
-    process::exit(num_read as i32);
+    process::exit(ec);
 }

@@ -172,6 +172,23 @@ matches any option that
 the typed text as a contiguous substring.
 All three styles are case\-insensitive.
 .TP 5
+.B \-B<n>
+Controls the exit code when the user presses Escape.
+Without this flag, ESC is a no\-op in normal mode and exits 255 in
+mask and select modes.
+.B \-B0
+makes ESC a no\-op in all modes (useful for kiosk or embedded workflows
+where the user should not be able to cancel mid\-prompt).
+.B \-B1
+through
+.B \-B253
+and
+.B \-B255
+cause ESC to exit with the given code, letting scripts distinguish
+"user pressed Escape" from "bad invocation" (which also exits 255).
+.B \-B254
+is disallowed because 254 is already the timeout\-with\-no\-default exit code.
+.TP 5
 .B \-L
 Map characters to lower case.
 .TP 5
@@ -485,6 +502,9 @@ fuzzy filter: typing \fBso\fP matches all options containing \fIs\fP then \fIo\f
 .TP 5
 .B grabchars select\-lr \-Fc "new haven,new york,newest first" \-q "City: "
 contains filter: typing \fBew\fP matches every option containing that substring.
+.TP 5
+.B grabchars select "yes,no" \-B200 \-q "Confirm: "
+exit code 200 on Escape, letting scripts distinguish cancel from error (255).
 .TP 5
 .B grabchars \-R \-n 3 \-q "Press an arrow key: " | xxd
 capture raw bytes; an arrow key produces three bytes (e.g. 1b 5b 41).

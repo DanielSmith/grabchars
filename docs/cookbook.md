@@ -163,8 +163,23 @@ characters typed (not counting Enter).
 
 ## 6. Line Editing (-E)
 
-When `-n` is greater than 1, editing is enabled by default: arrow
-keys, Home/End, Backspace, Delete, Ctrl-K, Ctrl-U, Ctrl-W all work.
+When `-n` is greater than 1, editing is enabled by default. The full
+key map:
+
+| Key | Action |
+|-----|--------|
+| Left / Ctrl-B | Move cursor left one character |
+| Right / Ctrl-F | Move cursor right one character |
+| Home / Ctrl-A | Move to beginning of line |
+| End / Ctrl-E | Move to end of line |
+| Backspace | Delete character before cursor |
+| Delete / Ctrl-D | Delete character under cursor |
+| Ctrl-K | Kill from cursor to end of line |
+| Ctrl-U | Kill from beginning of line to cursor |
+| Ctrl-W | Kill word backward |
+
+Kill commands track the character budget: with `-n 20` you can type 20
+characters, kill 10 with Ctrl-K, and type 10 more.
 
 ### Edit mode on (default for -n > 1)
 
@@ -891,7 +906,57 @@ esac
 
 ---
 
-## 21. Real-World Script Patterns
+## 21. ESC Bail Flag (-B)
+
+By default, Escape is a no-op in normal mode and exits 255 in mask and
+select modes. `-B<n>` lets you control this per-invocation.
+
+| Flag | Behavior |
+|------|----------|
+| `-B0` | ESC is a no-op in all modes |
+| `-B1`–`-B253` | ESC exits with code *n* |
+| `-B255` | ESC exits 255 (explicit; same as default for mask/select) |
+
+`-B254` is disallowed — 254 is the timeout-with-no-default exit code.
+
+### Distinguish ESC from error
+
+Without `-B`, exit 255 means either "ESC pressed" or "bad flags" — scripts
+can't tell them apart. With `-B<n>`, they get separate codes:
+
+```bash
+CHOICE=$(grabchars select "yes,no,cancel" -B200 -q "Continue? ")
+case $? in
+    0)   do_yes ;;
+    1)   do_no ;;
+    2)   do_cancel ;;
+    200) echo "Cancelled with ESC" ;;
+    255) echo "grabchars error" ;;
+esac
+```
+
+### Kiosk mode: disable ESC entirely
+
+```bash
+grabchars select "option1,option2,option3" -B0 -q "Choose: "
+```
+
+The user cannot cancel — they must select an option or Ctrl+C the script.
+Document this clearly: `-B0` in select modes means there is no in-band
+cancel key.
+
+### ESC in normal mode
+
+Normal mode ignores ESC by default. With `-B<n>`, ESC exits with that code:
+
+```bash
+grabchars -n10 -r -B100 -q "Input (ESC to cancel): "
+# ESC exits 100; Enter or 10 chars exits normally
+```
+
+---
+
+## 22. Real-World Script Patterns
 
 ### Confirm before destructive action
 

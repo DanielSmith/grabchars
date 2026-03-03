@@ -17,19 +17,40 @@
 //! Replaces the BSD sgtty.h / SysV termio.h code from sys.c
 //! with POSIX termios via libc.
 
-use std::sync::Mutex;
+use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-static SAVED_TERMIOS: Mutex<Option<libc::termios>> = Mutex::new(None);
+// Async-signal-safe storage for the saved termios.
+//
+// We write exactly once in init_term() before any signals are enabled,
+// then read (never write again) in restore_saved() which may be called
+// from a signal handler.  A Mutex is not async-signal-safe; this pattern
+// avoids the theoretical deadlock where a signal fires while init_term()
+// holds the lock.
+static TERMIOS_SAVED: AtomicBool = AtomicBool::new(false);
+static mut SAVED_TERMIOS: MaybeUninit<libc::termios> = MaybeUninit::uninit();
 
 /// Put the terminal into raw (cbreak) mode with echo off.
 /// Returns the original termios so we can restore it later.
 pub fn init_term(flush: bool) -> libc::termios {
     unsafe {
-        let mut orig: libc::termios = std::mem::zeroed();
-        libc::tcgetattr(0, &mut orig);
+        if libc::isatty(0) == 0 {
+            eprintln!("grabchars: stdin is not a terminal");
+            std::process::exit(255);
+        }
 
-        // Save a copy for signal handler restoration
-        *SAVED_TERMIOS.lock().unwrap() = Some(orig);
+        let mut orig: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(0, &mut orig) != 0 {
+            eprintln!("grabchars: tcgetattr failed");
+            std::process::exit(255);
+        }
+
+        // Save a copy for signal handler restoration.
+        // Written once here, before signals are enabled; never written again.
+        // Use addr_of_mut! to get a raw pointer without creating a reference
+        // (required by Rust 2024 static_mut_refs lint).
+        std::ptr::addr_of_mut!(SAVED_TERMIOS).write(MaybeUninit::new(orig));
+        TERMIOS_SAVED.store(true, Ordering::Release);
 
         let mut raw = orig;
 
@@ -63,11 +84,12 @@ pub fn restore_term(orig: &libc::termios) {
 /// Restore from the saved static copy (used in signal handlers
 /// where we can't pass parameters).
 pub fn restore_saved() {
-    if let Ok(guard) = SAVED_TERMIOS.lock() {
-        if let Some(ref orig) = *guard {
-            unsafe {
-                libc::tcsetattr(0, libc::TCSAFLUSH, orig);
-            }
+    if TERMIOS_SAVED.load(Ordering::Acquire) {
+        unsafe {
+            // addr_of! gives a raw pointer without creating a reference;
+            // MaybeUninit<T> has the same layout as T, so the cast is valid.
+            let tp = std::ptr::addr_of!(SAVED_TERMIOS) as *const libc::termios;
+            libc::tcsetattr(0, libc::TCSAFLUSH, tp);
         }
     }
 }
