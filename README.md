@@ -34,6 +34,7 @@ If your script needs just one character, or something like "read up to 4 digits 
 - **Vertical select** (`select`) — choose from a list with Up/Down arrows and filter-as-you-type
 - **Horizontal select** (`select-lr`) — inline left/right selection with configurable highlight styles
 - **Select filter styles** (`-F`) — prefix (default), fuzzy/subsequence (`s.*o` style), or contains
+- **JSON output** (`-J`) — structured JSON with value, exit code, status, and metadata; replaces boilerplate `$?` handling
 
 ---
 
@@ -56,9 +57,9 @@ cargo build --release
 ## Usage
 
 ```
-grabchars [-b] [-c chars] [-C exclude] [-d default] [-e] [-f] [-m mask]
-          [-n count] [-p prompt] [-q prompt] [-r] [-R] [-s] [-t seconds]
-          [-E[0|1]] [-H[r|b|a]] [-L] [-U] [-Z[0|1]]
+grabchars [-b] [-c chars] [-C exclude] [-d default] [-e] [-f] [-J[p|0]]
+          [-m mask] [-n count] [-p prompt] [-q prompt] [-r] [-R] [-s]
+          [-t seconds] [-E[0|1]] [-H[r|b|a]] [-L] [-U] [-Z[0|1]]
 
 grabchars select  [opts] "item1,item2,..."   # vertical list
 grabchars select  [opts] --file filename     # vertical list from file
@@ -76,6 +77,9 @@ grabchars select-lr [opts] --file filename   # horizontal list from file
 | `-d default` | Default string returned on Enter or timeout |
 | `-e` | Output to stderr instead of stdout |
 | `-f` | Flush type-ahead input buffer before reading |
+| `-J` / `-J1` | JSON output — compact (single line) |
+| `-Jp` | JSON output — pretty-printed |
+| `-J0` | JSON output off (default) |
 | `-m mask` | Mask mode — positional input with auto-inserted literals (see mask syntax) |
 | `-n count` | Number of keystrokes to read (default: 1) |
 | `-p prompt` | Print prompt to stdout |
@@ -164,6 +168,13 @@ grabchars -R -n20 -r -q "Type (Enter to finish): "
 
 # Raw mode: discover what bytes any key sends (pipe to xxd)
 grabchars -R -n6 -q "Press a key: " | xxd
+
+# JSON output — structured result for scripts
+result=$(grabchars -J -cy -q "y/n: " 2>/dev/tty)
+echo "$result" | jq .
+
+# JSON with select — value, index, filter text in one object
+result=$(grabchars -J select "deploy,rollback,quit" -q "Action: " 2>/dev/tty)
 ```
 
 ### Exit Status
@@ -226,6 +237,9 @@ grabchars/
     maskInput.md             # Mask syntax reference
     RAW-MODE.md              # Raw mode (-R) reference: byte sequences, flag interactions, impl notes
     FILTER-FLAG.md           # Select filter styles (-Fp/-Ff/-Fc) reference
+    JSON-OUTPUT.md           # JSON output mode (-J) reference
+    grabchars.md             # Man page in Markdown format
+    CHANGELOG.md             # Version history
     RUST-PORT.md             # Port notes, design decisions, architecture detail
     quantifiers-plan.md      # Design doc for mask quantifiers
     README-1990              # Original 1990 readme from comp.sources.misc
@@ -233,7 +247,7 @@ grabchars/
     helpers.sh               # Shared test utilities
     menu.sh                  # Interactive test menu (uses grabchars select-lr)
     run_tests.sh             # Run all test groups
-    01_basic.sh … 12_raw.sh        # Test suites by feature
+    01_basic.sh … 14_json.sh       # Test suites by feature
   Cargo.toml
   LICENSE                    # Apache 2.0
 ```

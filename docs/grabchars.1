@@ -137,6 +137,31 @@ which allows for some typeahead in shell scripts.
 .B \-h
 Help/usage screen.
 .TP 5
+.B \-J
+.TP 5
+.B \-J1
+Emit a single compact JSON object to stdout instead of the plain value.
+Contains fields:
+.BR value ,
+.BR exit ,
+.BR status ,
+.BR mode ,
+.BR timed_out ,
+.BR default_used ,
+.BR index ,
+and
+.BR filter .
+See
+.B JSON OUTPUT
+below.
+.TP 5
+.B \-Jp
+Pretty\-printed JSON (indented).  Useful for debugging or piping to
+.BR jq (1).
+.TP 5
+.B \-J0
+Explicit off \(em normal behavior (the default).
+.TP 5
 .B \-H<r|b|a>
 Highlight style for
 .B select\-lr
@@ -397,6 +422,53 @@ it with a backslash (e.g., \fB\\\\n\fP for a literal \fIn\fP).
 .fi
 .PP
 Quantifiers cannot be applied to literal characters.
+.SH JSON OUTPUT
+The
+.B \-J
+flag replaces the normal value output with a single JSON object.
+You get JSON or raw text, never both at the same time.
+The exit code
+.RB ( $? )
+is always identical to the
+.B exit
+field in the JSON object.
+.PP
+.B Fields
+(all always present):
+.PP
+.nf
+Field          Type              Description
+\-\-\-\-\-          \-\-\-\-              \-\-\-\-\-\-\-\-\-\-\-
+value          string            Captured text (what stdout normally contains)
+exit           integer           Exit code (same as $?)
+status         string            ok, default, timeout, or cancelled
+mode           string            normal, mask, select, select\-lr, or raw
+timed_out      boolean           Whether the timeout fired
+default_used   boolean           Whether the default value (\-d) was returned
+index          integer or null   0\-based option index (select modes); null otherwise
+filter         string or null    Filter text (select modes); null otherwise
+.fi
+.PP
+In raw mode
+.RB ( \-R ),
+.B value
+is hex\-encoded (space\-separated, e.g. \fI1b 5b 41\fP) since
+the captured bytes may not be valid UTF\-8.
+.PP
+.B \-J
+replaces the normal value output with JSON; the
+.BR \-e " and " \-b
+flags route that JSON the same way they route raw text.
+Prompts
+.RB ( \-q / \-p )
+are unaffected.
+In silent mode
+.RB ( \-s ),
+the JSON object is still written to stdout.
+.PP
+See
+.I docs/JSON\-OUTPUT.md
+in the source distribution for examples and full details.
 .SH RAW MODE
 With
 .BR \-R ,
@@ -508,6 +580,12 @@ exit code 200 on Escape, letting scripts distinguish cancel from error (255).
 .TP 5
 .B grabchars \-R \-n 3 \-q "Press an arrow key: " | xxd
 capture raw bytes; an arrow key produces three bytes (e.g. 1b 5b 41).
+.TP 5
+.B grabchars \-J \-cy \-q "y/n: " 2>/dev/tty
+JSON output: \fI{"value":"y","exit":1,"status":"ok",...}\fP
+.TP 5
+.B grabchars \-Jp select "yes,no" \-q "Choose: " 2>/dev/tty
+pretty\-printed JSON output for debugging or \fBjq\fP consumption.
 .PP
 Note that arguments like "\-n4" or "\-n 4" are handled the same way.
 .SH DIAGNOSTICS
@@ -545,6 +623,9 @@ docs/cookbook.md     \-\- runnable examples covering all features
 docs/maskInput.md    \-\- mask syntax reference
 docs/RAW\-MODE.md    \-\- raw byte mode reference
 docs/FILTER\-FLAG.md \-\- select filter styles (\-Fp/\-Ff/\-Fc)
+docs/JSON\-OUTPUT.md \-\- JSON output mode reference
+docs/grabchars.md   \-\- this man page in Markdown
+docs/CHANGELOG.md   \-\- version history
 .fi
 .SH AUTHOR
 Dan Smith

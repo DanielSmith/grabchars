@@ -30,7 +30,7 @@ echo
 check_exit "$actual_exit" "255" && pass || fail "expected exit 255 (invalid -B256)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-test_start "-Babc rejected: non-numeric argument"
+test_start "-Babc rejected: non-numeric argument" 
 watch_note "fully automated — no keystrokes needed"
 show_command "-Babc -cy"
 echo

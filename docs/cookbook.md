@@ -956,7 +956,120 @@ grabchars -n10 -r -B100 -q "Input (ESC to cancel): "
 
 ---
 
-## 22. Real-World Script Patterns
+## 22. JSON Output (-J)
+
+Replace the normal stdout value with a structured JSON object containing the
+value, exit code, status, mode, and metadata.  Makes multi-step scripts much
+simpler — no more `$?` juggling.
+
+### Compact JSON (default)
+
+```bash
+result=$(grabchars -J -cy -q "y/n: " 2>/dev/tty)
+echo "$result"
+```
+
+Type `y`:
+```json
+{"value":"y","exit":1,"status":"ok","mode":"normal","timed_out":false,"default_used":false,"index":null,"filter":null}
+```
+
+### Pretty-print (-Jp)
+
+```bash
+grabchars -Jp select "yes,no,cancel" -q "Choose: " 2>/dev/tty
+```
+
+Select `no`:
+```json
+{
+  "value": "no",
+  "exit": 1,
+  "status": "ok",
+  "mode": "select",
+  "timed_out": false,
+  "default_used": false,
+  "index": 1,
+  "filter": "n"
+}
+```
+
+### Default on Enter
+
+```bash
+result=$(grabchars -J -cy -d y -q "Continue? [Y/n] " 2>/dev/tty)
+```
+
+Press Enter — returns `"status":"default"`, `"default_used":true`.
+
+### Timeout with default
+
+```bash
+result=$(grabchars -J select "yes,no" -d yes -t 5 -q "Choose (5s): " 2>/dev/tty)
+```
+
+Timer fires: `"timed_out":true`, `"default_used":true`, `"value":"yes"`.
+
+### ESC cancelled
+
+```bash
+result=$(grabchars -J select "yes,no" -B100 -q "Choose: " 2>/dev/tty)
+```
+
+Press ESC: `"status":"cancelled"`, `"exit":100`.
+
+### Select with filter text
+
+```bash
+result=$(grabchars -J select "san francisco,santa maria,san jose" -q "City: " 2>/dev/tty)
+```
+
+Type `san j`, Enter on `san jose`:
+```json
+{"value":"san jose","exit":2,"status":"ok","mode":"select","timed_out":false,"default_used":false,"index":2,"filter":"san j"}
+```
+
+### Mask mode
+
+```bash
+result=$(grabchars -J -m "(nnn) nnn-nnnn" -q "Phone: " 2>/dev/tty)
+```
+
+Type 10 digits:
+```json
+{"value":"(212) 555-1212","exit":10,"status":"ok","mode":"mask","timed_out":false,"default_used":false,"index":null,"filter":null}
+```
+
+### Raw mode (hex-encoded value)
+
+```bash
+result=$(grabchars -J -R -n 3 -q "Press an arrow key: " 2>/dev/tty)
+```
+
+Press Up arrow:
+```json
+{"value":"1b 5b 41","exit":3,"status":"ok","mode":"raw","timed_out":false,"default_used":false,"index":null,"filter":null}
+```
+
+### Consuming with jq
+
+```bash
+result=$(grabchars -J select "deploy,rollback,quit" -B100 -q "Action: " 2>/dev/tty)
+
+value=$(echo "$result"  | jq -r '.value')
+status=$(echo "$result" | jq -r '.status')
+
+case "$status" in
+    ok)        echo "Selected: $value" ;;
+    default)   echo "Defaulted to: $value" ;;
+    timeout)   echo "Timed out" ;;
+    cancelled) echo "Cancelled via ESC" ;;
+esac
+```
+
+---
+
+## 23. Real-World Script Patterns
 
 ### Confirm before destructive action
 
