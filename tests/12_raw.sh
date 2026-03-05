@@ -8,45 +8,45 @@ test_section "Raw Mode (-R)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "timeout with no default → exit 254 (automated)"
-echo    "  -R -n5 -t2: nothing typed, timeout fires."
+echo    "  -R -n5 -t5: nothing typed, timeout fires."
 echo    "  No output. Exit code = 254."
-watch_note "timing out in 2 seconds..."
-show_command "-R -n5 -t2"
-actual_out=$("$GRABCHARS" -R -n5 -t2 2>/dev/null)
+watch_note "timing out in 5 seconds..."
+show_command "-R -n5 -t5"
+actual_out=$("$GRABCHARS" -R -n5 -t5 2>/dev/null)
 actual_exit=$?
 check_output "$actual_out" "" "stdout (should be empty)"
 check_exit   "$actual_exit" "254" && pass || fail "expected exit 254 on timeout"
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "timeout with default → default output (automated)"
-echo    "  -R -n5 -t2 -d hello: timeout fires, default 'hello' is returned."
+echo    "  -R -n5 -t5 -d hello: timeout fires, default 'hello' is returned."
 echo    "  Output: 'hello'. Exit code = 5."
-watch_note "timing out in 2 seconds..."
-show_command "-R -n5 -t2 -dhello"
-actual_out=$("$GRABCHARS" -R -n5 -t2 -dhello 2>/dev/null)
+watch_note "timing out in 5 seconds..."
+show_command "-R -n5 -t5 -dhello"
+actual_out=$("$GRABCHARS" -R -n5 -t5 -dhello 2>/dev/null)
 actual_exit=$?
 check_output "$actual_out" "hello" "stdout"
 check_exit   "$actual_exit" "5" && pass || fail "expected 'hello' with exit 5"
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "timeout with default + -s → no output, exit = default length (automated)"
-echo    "  -R -n5 -t2 -d hello -s: timeout fires but -s suppresses output."
+echo    "  -R -n5 -t5 -d hello -s: timeout fires but -s suppresses output."
 echo    "  Nothing on stdout. Exit code = 5 (length of 'hello')."
-watch_note "timing out in 2 seconds..."
-show_command "-R -n5 -t2 -dhello -s"
-actual_out=$("$GRABCHARS" -R -n5 -t2 -dhello -s 2>/dev/null)
+watch_note "timing out in 5 seconds..."
+show_command "-R -n5 -t5 -dhello -s"
+actual_out=$("$GRABCHARS" -R -n5 -t5 -dhello -s 2>/dev/null)
 actual_exit=$?
 check_output "$actual_out" "" "stdout (silent — should be empty)"
 check_exit   "$actual_exit" "5" && pass || fail "expected exit 5 (silent timeout default)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "-e output routing with timeout+default (automated)"
-echo    "  -R -t2 -d hi -e: timeout fires, default 'hi' goes to stderr."
+echo    "  -R -t5 -d hi -e: timeout fires, default 'hi' goes to stderr."
 echo    "  Stdout empty. Stderr: 'hi'. Exit code = 2."
-watch_note "timing out in 2 seconds..."
-show_command "-R -t2 -dhi -e"
+watch_note "timing out in 5 seconds..."
+show_command "-R -t5 -dhi -e"
 _tmpfile=$(mktemp)
-stdout=$("$GRABCHARS" -R -t2 -dhi -e 2>"$_tmpfile")
+stdout=$("$GRABCHARS" -R -t5 -dhi -e 2>"$_tmpfile")
 actual_exit=$?
 stderr=$(cat "$_tmpfile"); rm -f "$_tmpfile"
 ok=0
@@ -57,12 +57,12 @@ check_exit   "$actual_exit" "2"                        || ok=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "-b output routing with timeout+default (automated)"
-echo    "  -R -t2 -d hi -b: timeout fires, default 'hi' goes to both streams."
+echo    "  -R -t5 -d hi -b: timeout fires, default 'hi' goes to both streams."
 echo    "  Stdout: 'hi'. Stderr: 'hi'. Exit code = 2."
-watch_note "timing out in 2 seconds..."
-show_command "-R -t2 -dhi -b"
+watch_note "timing out in 5 seconds..."
+show_command "-R -t5 -dhi -b"
 _tmpfile=$(mktemp)
-stdout=$("$GRABCHARS" -R -t2 -dhi -b 2>"$_tmpfile")
+stdout=$("$GRABCHARS" -R -t5 -dhi -b 2>"$_tmpfile")
 actual_exit=$?
 stderr=$(cat "$_tmpfile"); rm -f "$_tmpfile"
 ok=0
@@ -73,12 +73,12 @@ check_exit   "$actual_exit" "2"      || ok=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_start "-c and -U flags silently ignored (automated)"
-echo    "  -R -t1 -d x -c z: -c filter is ignored; timeout fires and returns default."
+echo    "  -R -t5 -d x -c z: -c filter is ignored; timeout fires and returns default."
 echo    "  If -c were active it would reject any char other than 'z'."
 echo    "  Since -R ignores -c, the default mechanism runs normally."
-watch_note "timing out in 1 second..."
-show_command "-R -t1 -dx -cz"
-actual_out=$("$GRABCHARS" -R -t1 -dx -cz 2>/dev/null)
+watch_note "timing out in 5 seconds..."
+show_command "-R -t5 -dx -cz"
+actual_out=$("$GRABCHARS" -R -t5 -dx -cz 2>/dev/null)
 actual_exit=$?
 check_output "$actual_out" "x" "stdout (default)"
 check_exit   "$actual_exit" "1" && pass || fail "expected 'x' with exit 1 (-c ignored)"

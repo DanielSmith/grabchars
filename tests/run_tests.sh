@@ -48,6 +48,7 @@ fi
 echo
 echo -e "${BOLD}grabchars 2.0 — interactive test suite${RESET}"
 echo -e "${DIM}Binary: $GRABCHARS${RESET}"
+echo -e "${DIM}$(ls -l "$GRABCHARS")${RESET}"
 echo -e "${DIM}Date:   $(date)${RESET}"
 
 # ── Run each test file as a subprocess, accumulate totals ─────────────────────
@@ -83,8 +84,12 @@ for test_file in "${test_files[@]}"; do
 
     # Pause between test files so the user can read results
     echo
-    echo -e "${DIM}  ↵ Press Enter to continue to next test file...${RESET}"
-    read -r -s
+    echo -e "${DIM}  Enter = next test file · m = menu${RESET}"
+    choice=$("$GRABCHARS" -cm -r -n1 2>/dev/null)
+    if [[ "$choice" == "m" ]]; then
+        echo
+        exec bash "$(dirname "${BASH_SOURCE[0]}")/menu.sh"
+    fi
 done
 
 # ── Grand summary ─────────────────────────────────────────────────────────────

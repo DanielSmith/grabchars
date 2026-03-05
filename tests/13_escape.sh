@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 _check_binary
 
-OPTS="yes no maybe"
+OPTS="yes,no,maybe"
 
 # ─────────────────────────────────────────────────────────────────────────────
 test_section "ESC Bail Flag (-B) — automated validation"
@@ -130,7 +130,7 @@ echo    "  With -B200, pressing ESC in select mode exits with code 200."
 instruct "Press Escape"
 show_command "select -B200 $OPTS"
 echo
-actual_out=$("$GRABCHARS" select -B200 $OPTS 2>/dev/null)
+actual_out=$("$GRABCHARS" select -B200 "$OPTS" 2>/dev/null)
 actual_exit=$?
 echo
 check_output "$actual_out" "" "stdout (should be empty)" \
@@ -143,7 +143,7 @@ echo    "  Press ESC, then type 'n' to match 'no', then Enter."
 instruct "Press Escape, type 'n', press Enter"
 show_command "select -B0 $OPTS"
 echo
-actual_out=$("$GRABCHARS" select -B0 $OPTS 2>/dev/null)
+actual_out=$("$GRABCHARS" select -B0 "$OPTS" 2>/dev/null)
 actual_exit=$?
 echo
 check_output "$actual_out" "no" && check_exit "$actual_exit" "1" \
@@ -158,7 +158,7 @@ echo    "  With -B200, pressing ESC in select-lr mode exits with code 200."
 instruct "Press Escape"
 show_command "select-lr -B200 $OPTS"
 echo
-actual_out=$("$GRABCHARS" select-lr -B200 $OPTS 2>/dev/null)
+actual_out=$("$GRABCHARS" select-lr -B200 "$OPTS" 2>/dev/null)
 actual_exit=$?
 echo
 check_output "$actual_out" "" "stdout (should be empty)" \
@@ -171,7 +171,7 @@ echo    "  Press ESC, then press Enter to confirm the first option ('yes')."
 instruct "Press Escape, then press Enter"
 show_command "select-lr -B0 $OPTS"
 echo
-actual_out=$("$GRABCHARS" select-lr -B0 $OPTS 2>/dev/null)
+actual_out=$("$GRABCHARS" select-lr -B0 "$OPTS" 2>/dev/null)
 actual_exit=$?
 echo
 check_output "$actual_out" "yes" && check_exit "$actual_exit" "3" \

@@ -26,7 +26,7 @@ echo -e "${DIM}← → to navigate · type to jump · Enter to run · Esc to qui
 echo
 
 # ── Show the menu using grabchars select-lr ───────────────────────────────────
-choice=$("$GRABCHARS" select-lr "$options" 2>/dev/tty)
+choice=$("$GRABCHARS" select-lr "$options" -Ff 2>/dev/tty)
 exit_code=$?
 echo
 

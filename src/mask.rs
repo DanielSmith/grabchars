@@ -20,7 +20,7 @@ use std::sync::atomic::Ordering;
 
 use crate::input::{self, KeyInput};
 use crate::output::{self, CURSOR_LEFT, CLEAR_TO_EOL};
-use crate::{Flags, TIMED_OUT};
+use crate::{apply_char_filters, Flags, TIMED_OUT};
 
 pub enum MaskClass {
     Upper,       // U - uppercase letter
@@ -310,30 +310,10 @@ pub fn run_mask_mode(
 
         match key {
             KeyInput::Char(b) => {
-                let mut ch = b as char;
-                // Case mapping
-                if flags.upper {
-                    ch = ch.to_uppercase().next().unwrap_or(ch);
-                }
-                if flags.lower {
-                    ch = ch.to_lowercase().next().unwrap_or(ch);
-                }
-                // -c: include filter
-                if flags.check {
-                    if let Some(re) = valid_pattern {
-                        if !re.is_match(&ch.to_string()) {
-                            continue;
-                        }
-                    }
-                }
-                // -C: exclude filter
-                if flags.exclude {
-                    if let Some(re) = exclude_pattern {
-                        if re.is_match(&ch.to_string()) {
-                            continue;
-                        }
-                    }
-                }
+                let ch = match apply_char_filters(b as char, flags, valid_pattern, exclude_pattern) {
+                    Some(c) => c,
+                    None => continue,
+                };
 
                 // Quantifier-aware character acceptance
                 let (idx, count) = current_mask_state(mask, &mask_map);

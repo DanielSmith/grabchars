@@ -110,6 +110,40 @@ impl Flags {
     }
 }
 
+/// Apply -c/-C include/exclude filters and -U/-L case mapping to a character.
+/// Returns `None` if the character is rejected, `Some(ch)` (possibly case-mapped) if accepted.
+pub fn apply_char_filters(
+    ch: char,
+    flags: &Flags,
+    valid_pattern: &Option<regex::Regex>,
+    exclude_pattern: &Option<regex::Regex>,
+) -> Option<char> {
+    // Filter against the raw input character first
+    if flags.check {
+        if let Some(re) = valid_pattern {
+            if !re.is_match(&ch.to_string()) {
+                return None;
+            }
+        }
+    }
+    if flags.exclude {
+        if let Some(re) = exclude_pattern {
+            if re.is_match(&ch.to_string()) {
+                return None;
+            }
+        }
+    }
+    // Then apply case mapping
+    let mut ch = ch;
+    if flags.upper {
+        ch = ch.to_uppercase().next().unwrap_or(ch);
+    }
+    if flags.lower {
+        ch = ch.to_lowercase().next().unwrap_or(ch);
+    }
+    Some(ch)
+}
+
 // ---------------------------------------------------------------------------
 // Usage
 // ---------------------------------------------------------------------------
@@ -821,30 +855,10 @@ fn main() {
         if erase_active {
             match key {
                 KeyInput::Char(b) => {
-                    let mut ch = b as char;
-                    // -c: include filter
-                    if flags.check {
-                        if let Some(ref re) = valid_pattern {
-                            if !re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
-                    }
-                    // -C: exclude filter
-                    if flags.exclude {
-                        if let Some(ref re) = exclude_pattern {
-                            if re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
-                    }
-                    // Case mapping
-                    if flags.upper {
-                        ch = ch.to_uppercase().next().unwrap_or(ch);
-                    }
-                    if flags.lower {
-                        ch = ch.to_lowercase().next().unwrap_or(ch);
-                    }
+                    let ch = match apply_char_filters(b as char, &flags, &valid_pattern, &exclude_pattern) {
+                        Some(c) => c,
+                        None => continue,
+                    };
                     buffer.insert(cursor_pos, ch as u8);
                     cursor_pos += 1;
                     num_read += 1;
@@ -971,22 +985,10 @@ fn main() {
                         break 'outer;
                     }
                     // Treat newline as a regular char subject to -c/-C filtering
-                    let ch = '\n';
-                    if flags.check {
-                        if let Some(ref re) = valid_pattern {
-                            if !re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
+                    if apply_char_filters('\n', &flags, &valid_pattern, &exclude_pattern).is_none() {
+                        continue;
                     }
-                    if flags.exclude {
-                        if let Some(ref re) = exclude_pattern {
-                            if re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
-                    }
-                    buffer.insert(cursor_pos, ch as u8);
+                    buffer.insert(cursor_pos, b'\n');
                     cursor_pos += 1;
                     num_read += 1;
                     if !flags.silent {
@@ -1013,7 +1015,7 @@ fn main() {
             // Non-edit mode: Char, Backspace (raw), and Enter
             match key {
                 KeyInput::Char(b) => {
-                    let mut ch = b as char;
+                    let ch = b as char;
                     // Default on Enter as first char
                     if ch == '\n' && flags.dflt && num_read == 0 {
                         if let Some(ref ds) = default_string {
@@ -1030,28 +1032,10 @@ fn main() {
                     if ch == '\n' && flags.ret_key {
                         break 'outer;
                     }
-                    // -c: include filter
-                    if flags.check {
-                        if let Some(ref re) = valid_pattern {
-                            if !re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
-                    }
-                    // -C: exclude filter
-                    if flags.exclude {
-                        if let Some(ref re) = exclude_pattern {
-                            if re.is_match(&ch.to_string()) {
-                                continue;
-                            }
-                        }
-                    }
-                    if flags.upper {
-                        ch = ch.to_uppercase().next().unwrap_or(ch);
-                    }
-                    if flags.lower {
-                        ch = ch.to_lowercase().next().unwrap_or(ch);
-                    }
+                    let ch = match apply_char_filters(ch, &flags, &valid_pattern, &exclude_pattern) {
+                        Some(c) => c,
+                        None => continue,
+                    };
                     buffer.push(ch as u8);
                     num_read += 1;
                     if !flags.silent {

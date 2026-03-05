@@ -19,7 +19,7 @@ use std::sync::atomic::Ordering;
 
 use crate::input::{self, KeyInput};
 use crate::output::{self, CURSOR_LEFT, CURSOR_RIGHT, CLEAR_TO_EOL, REVERSE_ON, REVERSE_OFF};
-use crate::{FilterStyle, Flags, HighlightStyle, TIMED_OUT};
+use crate::{apply_char_filters, FilterStyle, Flags, HighlightStyle, TIMED_OUT};
 
 /// Result from a select operation, carrying all info needed for JSON output.
 pub struct SelectResult {
@@ -64,6 +64,44 @@ fn compute_matches(options: &[String], filter: &str, style: &FilterStyle) -> Vec
         })
         .map(|(i, _)| i)
         .collect()
+}
+
+/// Recompute filtered matches, clamp match_idx, and re-render.
+fn recompute_and_render(
+    filter: &[u8],
+    options: &[String],
+    matches: &mut Vec<usize>,
+    match_idx: &mut usize,
+    flags: &Flags,
+    render: impl FnOnce(&[u8], &[String], &[usize], usize),
+) {
+    let filter_str = String::from_utf8_lossy(filter);
+    *matches = compute_matches(options, &filter_str, &flags.filter_style);
+    if *match_idx >= matches.len() {
+        *match_idx = 0;
+    }
+    if !flags.silent {
+        render(filter, options, matches, *match_idx);
+    }
+}
+
+/// Find the index within `matches` whose option matches `default` (case-insensitive).
+/// Returns 0 if not found.
+fn find_default_match(default: &str, options: &[String], matches: &[usize]) -> usize {
+    let d = default.to_lowercase();
+    for (i, &idx) in matches.iter().enumerate() {
+        if options[idx].to_lowercase() == d {
+            return i;
+        }
+    }
+    0
+}
+
+/// Find the index within `options` whose value matches `default` (case-insensitive).
+/// Returns `None` if not found.
+fn find_default_option(default: &str, options: &[String]) -> Option<usize> {
+    let d = default.to_lowercase();
+    options.iter().position(|opt| opt.to_lowercase() == d)
 }
 
 /// Render the select widget on stderr.
@@ -140,13 +178,7 @@ pub fn run_select_mode(
 
     // If -d is set, find and highlight that option initially
     if let Some(ds) = default_string {
-        let ds_lower = ds.to_lowercase();
-        for (i, idx) in matches.iter().enumerate() {
-            if options[*idx].to_lowercase() == ds_lower {
-                match_idx = i;
-                break;
-            }
-        }
+        match_idx = find_default_match(ds, options, &matches);
     }
 
     // Initial render
@@ -160,18 +192,14 @@ pub fn run_select_mode(
         // Check timeout
         if TIMED_OUT.load(Ordering::Relaxed) {
             if let Some(ds) = default_string {
-                // Find the default in original options
-                let ds_lower = ds.to_lowercase();
-                for (i, opt) in options.iter().enumerate() {
-                    if opt.to_lowercase() == ds_lower {
-                        if !flags.silent {
-                            clear_select_line(&mut prev_width);
-                            if flags.json.is_none() {
-                                output::output_str(opt, output_to_stderr, flags.both);
-                            }
+                if let Some(i) = find_default_option(ds, options) {
+                    if !flags.silent {
+                        clear_select_line(&mut prev_width);
+                        if flags.json.is_none() {
+                            output::output_str(&options[i], output_to_stderr, flags.both);
                         }
-                        return SelectResult { exit_code: i as i32, value: opt.clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                     }
+                    return SelectResult { exit_code: i as i32, value: options[i].clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                 }
             }
             if !flags.silent {
@@ -188,49 +216,25 @@ pub fn run_select_mode(
 
         match key {
             KeyInput::Char(b) => {
-                let mut ch = b as char;
-                if flags.upper {
-                    ch = ch.to_uppercase().next().unwrap_or(ch);
-                }
-                if flags.lower {
-                    ch = ch.to_lowercase().next().unwrap_or(ch);
-                }
+                let ch = apply_char_filters(b as char, flags, &None, &None).unwrap_or(b as char);
                 filter.insert(cursor_pos, ch as u8);
                 cursor_pos += 1;
-                let filter_str = String::from_utf8_lossy(&filter);
-                matches = compute_matches(options, &filter_str, &flags.filter_style);
-                if match_idx >= matches.len() {
-                    match_idx = 0;
-                }
-                if !flags.silent {
-                    render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                }
+                recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                    |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
             }
             KeyInput::Backspace => {
                 if cursor_pos > 0 {
                     filter.remove(cursor_pos - 1);
                     cursor_pos -= 1;
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
                 }
             }
             KeyInput::Delete => {
                 if cursor_pos < filter.len() {
                     filter.remove(cursor_pos);
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
                 }
             }
             KeyInput::Left => {
@@ -275,28 +279,16 @@ pub fn run_select_mode(
             KeyInput::KillToEnd => {
                 if cursor_pos < filter.len() {
                     filter.truncate(cursor_pos);
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
                 }
             }
             KeyInput::KillToStart => {
                 if cursor_pos > 0 {
                     filter.drain(..cursor_pos);
                     cursor_pos = 0;
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
                 }
             }
             KeyInput::KillWordBack => {
@@ -310,14 +302,8 @@ pub fn run_select_mode(
                     }
                     filter.drain(new_pos..cursor_pos);
                     cursor_pos = new_pos;
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_line(&filter, cursor_pos, options, &matches, match_idx, &mut prev_width);
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_line(f, cursor_pos, o, m, mi, &mut prev_width));
                 }
             }
             KeyInput::Up => {
@@ -508,13 +494,7 @@ pub fn run_select_lr_mode(
 
     // If -d is set, find and highlight that option initially
     if let Some(ds) = default_string {
-        let ds_lower = ds.to_lowercase();
-        for (i, idx) in matches.iter().enumerate() {
-            if options[*idx].to_lowercase() == ds_lower {
-                match_idx = i;
-                break;
-            }
-        }
+        match_idx = find_default_match(ds, options, &matches);
     }
 
     // Initial render
@@ -531,17 +511,14 @@ pub fn run_select_lr_mode(
         // Check timeout
         if TIMED_OUT.load(Ordering::Relaxed) {
             if let Some(ds) = default_string {
-                let ds_lower = ds.to_lowercase();
-                for (i, opt) in options.iter().enumerate() {
-                    if opt.to_lowercase() == ds_lower {
-                        if !flags.silent {
-                            clear_select_line(&mut prev_width);
-                            if flags.json.is_none() {
-                                output::output_str(opt, output_to_stderr, flags.both);
-                            }
+                if let Some(i) = find_default_option(ds, options) {
+                    if !flags.silent {
+                        clear_select_line(&mut prev_width);
+                        if flags.json.is_none() {
+                            output::output_str(&options[i], output_to_stderr, flags.both);
                         }
-                        return SelectResult { exit_code: i as i32, value: opt.clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                     }
+                    return SelectResult { exit_code: i as i32, value: options[i].clone(), status: "default", timed_out: true, default_used: true, index: Some(i as i32), filter: filter_str_fn(&filter) };
                 }
             }
             if !flags.silent {
@@ -558,58 +535,25 @@ pub fn run_select_lr_mode(
 
         match key {
             KeyInput::Char(b) => {
-                let mut ch = b as char;
-                if flags.upper {
-                    ch = ch.to_uppercase().next().unwrap_or(ch);
-                }
-                if flags.lower {
-                    ch = ch.to_lowercase().next().unwrap_or(ch);
-                }
+                let ch = apply_char_filters(b as char, flags, &None, &None).unwrap_or(b as char);
                 filter.insert(cursor_pos, ch as u8);
                 cursor_pos += 1;
-                let filter_str = String::from_utf8_lossy(&filter);
-                matches = compute_matches(options, &filter_str, &flags.filter_style);
-                if match_idx >= matches.len() {
-                    match_idx = 0;
-                }
-                if !flags.silent {
-                    render_select_lr_line(
-                        &filter, cursor_pos, options, &matches, match_idx,
-                        &flags.highlight_style, &mut prev_width,
-                    );
-                }
+                recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                    |f, o, m, mi| render_select_lr_line(f, cursor_pos, o, m, mi, &flags.highlight_style, &mut prev_width));
             }
             KeyInput::Backspace => {
                 if cursor_pos > 0 {
                     filter.remove(cursor_pos - 1);
                     cursor_pos -= 1;
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_lr_line(
-                            &filter, cursor_pos, options, &matches, match_idx,
-                            &flags.highlight_style, &mut prev_width,
-                        );
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_lr_line(f, cursor_pos, o, m, mi, &flags.highlight_style, &mut prev_width));
                 }
             }
             KeyInput::Delete => {
                 if cursor_pos < filter.len() {
                     filter.remove(cursor_pos);
-                    let filter_str = String::from_utf8_lossy(&filter);
-                    matches = compute_matches(options, &filter_str, &flags.filter_style);
-                    if match_idx >= matches.len() {
-                        match_idx = 0;
-                    }
-                    if !flags.silent {
-                        render_select_lr_line(
-                            &filter, cursor_pos, options, &matches, match_idx,
-                            &flags.highlight_style, &mut prev_width,
-                        );
-                    }
+                    recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                        |f, o, m, mi| render_select_lr_line(f, cursor_pos, o, m, mi, &flags.highlight_style, &mut prev_width));
                 }
             }
             KeyInput::Left | KeyInput::Up => {
@@ -664,16 +608,8 @@ pub fn run_select_lr_mode(
                 // Clear the filter
                 filter.clear();
                 cursor_pos = 0;
-                matches = compute_matches(options, "", &flags.filter_style);
-                if match_idx >= matches.len() {
-                    match_idx = 0;
-                }
-                if !flags.silent {
-                    render_select_lr_line(
-                        &filter, cursor_pos, options, &matches, match_idx,
-                        &flags.highlight_style, &mut prev_width,
-                    );
-                }
+                recompute_and_render(&filter, options, &mut matches, &mut match_idx, flags,
+                    |f, o, m, mi| render_select_lr_line(f, cursor_pos, o, m, mi, &flags.highlight_style, &mut prev_width));
             }
             KeyInput::Tab => {
                 if !matches.is_empty() {

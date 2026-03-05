@@ -70,58 +70,34 @@ pub fn handle_default(default_string: &str, flags: &Flags, output_to_stderr: boo
     EXIT_STAT.store(default_string.len() as i32, Ordering::Relaxed);
 }
 
-pub fn output_char(ch: char, to_stderr: bool, both: bool) {
+fn write_routed(to_stderr: bool, both: bool, emit: impl Fn(&mut dyn Write)) {
     if to_stderr {
-        eprint!("{}", ch);
+        emit(&mut io::stderr());
         let _ = io::stderr().flush();
         if both {
-            print!("{}", ch);
+            emit(&mut io::stdout());
             let _ = io::stdout().flush();
         }
     } else {
-        print!("{}", ch);
+        emit(&mut io::stdout());
         let _ = io::stdout().flush();
         if both {
-            eprint!("{}", ch);
+            emit(&mut io::stderr());
             let _ = io::stderr().flush();
         }
     }
+}
+
+pub fn output_char(ch: char, to_stderr: bool, both: bool) {
+    write_routed(to_stderr, both, |w| { let _ = write!(w, "{}", ch); });
 }
 
 pub fn output_str(s: &str, to_stderr: bool, both: bool) {
-    if to_stderr {
-        eprint!("{}", s);
-        let _ = io::stderr().flush();
-        if both {
-            print!("{}", s);
-            let _ = io::stdout().flush();
-        }
-    } else {
-        print!("{}", s);
-        let _ = io::stdout().flush();
-        if both {
-            eprint!("{}", s);
-            let _ = io::stderr().flush();
-        }
-    }
+    write_routed(to_stderr, both, |w| { let _ = write!(w, "{}", s); });
 }
 
 pub fn output_bytes(buf: &[u8], to_stderr: bool, both: bool) {
-    if to_stderr {
-        let _ = io::stderr().write_all(buf);
-        let _ = io::stderr().flush();
-        if both {
-            let _ = io::stdout().write_all(buf);
-            let _ = io::stdout().flush();
-        }
-    } else {
-        let _ = io::stdout().write_all(buf);
-        let _ = io::stdout().flush();
-        if both {
-            let _ = io::stderr().write_all(buf);
-            let _ = io::stderr().flush();
-        }
-    }
+    write_routed(to_stderr, both, |w| { let _ = w.write_all(buf); });
 }
 
 // ---------------------------------------------------------------------------
@@ -178,19 +154,5 @@ pub fn emit_json(payload: &JsonPayload, style: JsonStyle, to_stderr: bool, both:
             payload.timed_out, payload.default_used, idx, flt
         ),
     };
-    if to_stderr {
-        eprint!("{}", json);
-        let _ = io::stderr().flush();
-        if both {
-            print!("{}", json);
-            let _ = io::stdout().flush();
-        }
-    } else {
-        print!("{}", json);
-        let _ = io::stdout().flush();
-        if both {
-            eprint!("{}", json);
-            let _ = io::stderr().flush();
-        }
-    }
+    write_routed(to_stderr, both, |w| { let _ = write!(w, "{}", json); });
 }

@@ -87,15 +87,20 @@ check_output "$actual_out" "n" "stdout (prompt excluded)" && check_exit "$actual
 test_start "-Z0: suppress trailing newline to stderr"
 echo    "  Normally grabchars emits a trailing newline to stderr."
 echo    "  -Z0 suppresses it."
-watch_note "automated check — comparing stderr byte-for-byte"
-show_command '-q "Test" -dy -t1  (vs -Z0 variant)'
-stderr_with=$("$GRABCHARS"    -q "Test" -dy -t1 2>&1 >/dev/null)
-stderr_without=$("$GRABCHARS" -q "Test" -dy -t1 -Z0 2>&1 >/dev/null)
+watch_note "automated check — comparing stderr byte counts"
+show_command '-q "Test" -dy -t5  (vs -Z0 variant)'
+_tmp_with=$(mktemp)
+_tmp_without=$(mktemp)
+"$GRABCHARS"    -q "Test" -dy -t5 2>"$_tmp_with"  >/dev/null
+"$GRABCHARS" -q "Test" -dy -t5 -Z0 2>"$_tmp_without" >/dev/null
 echo
-if [[ "$stderr_with" != "$stderr_without" ]]; then
-    pass "-Z0 changes stderr output as expected"
+len_with=$(wc -c < "$_tmp_with")
+len_without=$(wc -c < "$_tmp_without")
+rm -f "$_tmp_with" "$_tmp_without"
+if [[ "$len_with" -gt "$len_without" ]]; then
+    pass "-Z0 produces shorter stderr ($len_without bytes vs $len_with bytes)"
 else
-    fail "stderr was identical with and without -Z0"
+    fail "expected -Z0 stderr ($len_without bytes) to be shorter than default ($len_with bytes)"
 fi
 
 print_summary
