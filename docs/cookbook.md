@@ -118,22 +118,24 @@ Type `A` — you see `a`. Output is `a`.
 
 ### Combine with -c
 
-`-U` and `-L` map the character first, then `-c` filters the result.
-So the filter must match the post-mapping value.
+`-c` filters the raw keystroke first, then `-U`/`-L` maps the case.
+So the filter must match what the user actually types.
 
 ```bash
-grabchars -U -c YN -q "Yes/No? "
+grabchars -U -c yn -q "Yes/No? "
 ```
 
-Type `y` or `Y` — both map to `Y`, which passes `-c YN`. Output is
-always `Y` or `N`.
+Type `y` — passes `-c yn`, then maps to `Y`. Output is `Y`.
+Type `n` — passes `-c yn`, then maps to `N`. Output is `N`.
+Type `Y` — rejected (uppercase `Y` doesn't match `-c yn`).
 
 ```bash
-grabchars -L -c yn -q "Yes/No? "
+grabchars -L -c YN -q "Yes/No? "
 ```
 
-Type `y` or `Y` — both map to `y`, which passes `-c yn`. Output is
-always `y` or `n`.
+Type `Y` — passes `-c YN`, then maps to `y`. Output is `y`.
+Type `N` — passes `-c YN`, then maps to `n`. Output is `n`.
+Type `y` — rejected (lowercase `y` doesn't match `-c YN`).
 
 ---
 
@@ -643,8 +645,8 @@ Only `y` or `n` is accepted.
 grabchars -m "cccc" -U -q "Code (forced upper): "
 ```
 
-Type lowercase — it's mapped to uppercase, then validated against
-the mask. All 4 letters come out uppercase.
+Type lowercase — it's validated against the mask first (`c` accepts
+any letter), then mapped to uppercase. All 4 letters come out uppercase.
 
 ### Escape to cancel
 

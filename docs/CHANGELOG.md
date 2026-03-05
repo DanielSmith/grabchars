@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [Unreleased] (v2.1 branch)
+## [2.1.0] — 2026-03-04
 
 ### Added
 - **JSON output (`-J`)** — structured JSON with value, exit code, status, mode,
@@ -22,6 +22,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `docs/FILTER-FLAG.md` — filter style reference
 - `tests/13_escape.sh` — ESC bail flag tests
 - `tests/14_json.sh` — JSON output tests
+
+### Changed (internal)
+- **Code refactoring** — four extract-function refactors reducing ~155 lines of
+  duplicated code with no behavior changes:
+  - Output routing (`output.rs`): extracted `write_routed` helper, collapsing
+    repeated stderr/stdout/both branching in `output_char`, `output_str`,
+    `output_bytes`, and `emit_json`.
+  - Character filtering & case mapping (`main.rs`): extracted `apply_char_filters()`
+    shared by normal, mask, and select modes. Unified an ordering inconsistency —
+    all modes now apply filter-first, then case mapping.
+  - Filter recompute & re-render (`select.rs`): extracted `recompute_and_render`
+    with a render closure, replacing 10 duplicated call sites across vertical
+    and horizontal select.
+  - Default option search (`select.rs`): extracted `find_default_match` and
+    `find_default_option`, replacing 4 inline search loops.
+- See `docs/REFACTOR.md` for the full plan-vs-outcome breakdown.
+
+### Fixed
+- Test suite improvements: fixed output capture in mask tests (`-b` flag),
+  corrected select exit code expectations (0-based index), fixed `-Z0` test
+  to use byte-count comparison, bumped raw-mode timeouts, added fuzzy matching
+  to test menu.
 
 ---
 
@@ -62,6 +84,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Timeout (`-t`) with optional default (`-d`).
 - POSIX signal handling (SIGALRM, SIGINT, SIGQUIT, SIGTSTP).
 
-[Unreleased]: https://github.com/DanielSmith/grabchars/compare/v2.0.1...HEAD
+[2.1.0]: https://github.com/DanielSmith/grabchars/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/DanielSmith/grabchars/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/DanielSmith/grabchars/releases/tag/v2.0.0
