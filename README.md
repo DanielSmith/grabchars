@@ -219,7 +219,7 @@ cargo build --release
 | Capability | grabchars | `read` builtin |
 |------------|-----------|----------------|
 | Grab N chars without Enter | ✅ `-n` | ✅ `-n` |
-| Character filtering | ✅ `-c` (regex) | ❌ manual loop |
+| Character filtering | ✅ `-c` (character class) | ❌ manual loop |
 | Default on timeout/Enter | ✅ `-d` + `-t` | ❌ script `$?` + fallback |
 | Line editing in `-n` mode | ✅ arrows, Emacs keys | ❌ `-n` disables readline |
 | Case mapping | ✅ `-U` / `-L` | ❌ |
