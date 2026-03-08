@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [2.1.0] — 2026-03-04
+## [2.1.0] — 2026-03-07
 
 ### Added
 - **JSON output (`-J`)** — structured JSON with value, exit code, status, mode,
@@ -18,6 +18,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Select filter styles (`-F`)** — fuzzy/subsequence (`-Ff`) and contains
   (`-Fc`) matching in addition to the default prefix (`-Fp`). All three are
   case-insensitive.
+- **Flush flag (`-f`) documented** — flushes type-ahead input before reading.
+  Present since the original 1988 code but never documented until now.
 - `docs/JSON-OUTPUT.md` — full JSON output reference
 - `docs/FILTER-FLAG.md` — filter style reference
 - `tests/13_escape.sh` — ESC bail flag tests

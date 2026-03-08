@@ -1,4 +1,4 @@
-# grabchars 2.0
+# grabchars 2.1
 
 **direct keystroke capture for shell scripts.**
 

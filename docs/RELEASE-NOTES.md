@@ -98,6 +98,17 @@ esac
 must Ctrl+C to exit, which restores the terminal less cleanly. Document this
 in scripts that use it.
 
+### Flush flag (`-f`) — now documented
+
+The `-f` flag flushes any type-ahead input from the terminal buffer before
+reading. This was present in the original 1988 code and carried into 2.0,
+but was never documented. It prevents stale keystrokes (from fast typing or
+pasted text that arrived before the prompt) from being read as input.
+
+```bash
+grabchars -f -c yn -q "Are you sure? [y/n] "
+```
+
 ### Bug fix: whitespace in comma-separated option lists
 
 Options passed as a single comma-separated string were not trimmed before
