@@ -38,19 +38,25 @@ If your script needs just one character, or something like "read up to 4 digits 
 
 ---
 
-## Building
+## Install
 
+**Homebrew** (macOS, Linux):
 ```bash
-cargo build --release
-# Binary: target/release/grabchars
+brew install DanielSmith/grabchars/grabchars
 ```
 
-### Dependencies
+**Cargo** (any platform with Rust):
+```bash
+cargo install grabchars
+```
 
-| Crate | Purpose |
-|-------|---------|
-| `libc` | POSIX termios, signals, alarm |
-| `regex` | Character filtering (`-c`) |
+**Arch Linux (AUR)**:
+```bash
+yay -S grabchars        # build from source
+yay -S grabchars-bin    # pre-built binary
+```
+
+**Pre-built binaries**: download from [GitHub Releases](https://github.com/DanielSmith/grabchars/releases) — available for macOS (x86_64, ARM64), Linux (x86_64, ARM64, ARMv7).
 
 ---
 
@@ -187,6 +193,22 @@ result=$(grabchars -J select "deploy,rollback,quit" -q "Action: " 2>/dev/tty)
 | Timeout without `-d` | 254 |
 | ESC pressed | 255 (normal mode only; in `-R`, ESC is just byte 0x1B) |
 | Error (bad flags, bad mask) | 255 |
+
+---
+
+## Building from source
+
+```bash
+cargo build --release
+# Binary: target/release/grabchars
+```
+
+### Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `libc` | POSIX termios, signals, alarm |
+| `regex` | Character filtering (`-c`) |
 
 ---
 
